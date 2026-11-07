@@ -117,6 +117,7 @@ const nimSettingsStatus = document.querySelector("#nim-settings-status");
 let aiBusy = false;
 let nimSettings = loadNimSettings();
 let chatConversation = [];
+const registeredEditableElements = new WeakSet();
 
 const NIM_TOOLS = [
   {
@@ -134,7 +135,16 @@ const NIM_TOOLS = [
       description: "Fügt eine einzelne Folie mit dem angegebenen Layout hinzu und wechselt zu ihr.",
       parameters: {
         type: "object",
-        properties: { layout_id: { type: "string", enum: ["cover", "section", "columns", "quote", "image", "video", "conclusion"] } },
+        properties: {
+          layout_id: {
+            type: "string",
+            enum: [
+              "cover", "section", "columns", "quote", "image", "video", "conclusion",
+              "starter-cover", "starter-question", "starter-plan", "starter-ideas",
+              "starter-wow", "starter-takeaway", "starter-questions",
+            ],
+          },
+        },
         required: ["layout_id"],
         additionalProperties: false,
       },
@@ -205,6 +215,13 @@ const SLIDE_LAYOUTS = [
   { id: "image", name: "Bild & Text", description: "Bildfläche und verschiebbarer Titel", title: "Was zeigt dieses Bild?", subtitle: "Bild über das Elemente-Menü hinzufügen" },
   { id: "video", name: "Video", description: "YouTube- oder Vimeo-Video einbetten", title: "Ein Beispiel in Bewegung", subtitle: "Video über das Elemente-Menü hinzufügen" },
   { id: "conclusion", name: "Fazit", description: "Kernaussage und Merksatz", title: "Das Wichtigste?", subtitle: "Deine Antwort in einem klaren Satz." },
+  { id: "starter-cover", name: "Startfolie · Titel", description: "Titelfolie aus dem GFS-Starter", sourceSlideIndex: 0 },
+  { id: "starter-question", name: "Leitfrage", description: "Einstieg mit Frage ans Publikum", sourceSlideIndex: 1 },
+  { id: "starter-plan", name: "Fahrplan", description: "Drei Stationen für deinen Vortrag", sourceSlideIndex: 2 },
+  { id: "starter-ideas", name: "Kernideen", description: "Drei zentrale Gedanken vorstellen", sourceSlideIndex: 3 },
+  { id: "starter-wow", name: "Aha-Moment", description: "Überraschende Erkenntnis mit Quelle", sourceSlideIndex: 4 },
+  { id: "starter-takeaway", name: "Fazit · Merksatz", description: "Leitfrage beantworten und bündeln", sourceSlideIndex: 5 },
+  { id: "starter-questions", name: "Fragerunde", description: "Abschluss und Diskussion", sourceSlideIndex: 6 },
 ];
 const STATIC_SLIDE_COUNT = slides.length;
 
@@ -279,7 +296,7 @@ function renderSlideElements(index) {
   const layer = getCustomLayer(slide);
   layer.replaceChildren();
   getSlideElements(index).forEach((item) => {
-    const node = document.createElement(item.type === "image" ? "img" : item.type === "video" ? "iframe" : "div");
+    const node = document.createElement(item.type === "image" ? "img" : "div");
     node.className = `custom-element custom-element-${item.type}${item.id === selectedElementId && index === activeIndex ? " is-selected" : ""}`;
     node.dataset.elementId = item.id;
     node.style.left = `${item.x}%`;
@@ -290,6 +307,7 @@ function renderSlideElements(index) {
     node.style.setProperty("--element-family", item.family || "Arial, Helvetica, sans-serif");
     node.style.setProperty("--element-align", item.align || "left");
     node.style.fontWeight = item.bold ? "800" : "400";
+    if (item.type === "video") node.style.height = `${item.width * 9 / 16}%`;
 
     if (item.type === "text") {
       node.textContent = item.text;
@@ -319,39 +337,95 @@ function renderSlideElements(index) {
       node.alt = item.alt || "Eingefügtes Bild";
       node.draggable = false;
     } else {
-      node.src = item.src;
-      node.title = "Eingebettetes Video";
-      node.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-      node.allowFullscreen = true;
-      node.referrerPolicy = "strict-origin-when-cross-origin";
+      const frame = document.createElement("iframe");
+      frame.src = item.src;
+      frame.title = "Eingebettetes Video";
+      frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+      frame.allowFullscreen = true;
+      frame.referrerPolicy = "strict-origin-when-cross-origin";
+      const dragHandle = document.createElement("button");
+      dragHandle.type = "button";
+      dragHandle.className = "custom-element-video-drag";
+      dragHandle.textContent = "⠿ Video verschieben";
+      dragHandle.setAttribute("aria-label", "Video verschieben");
+      const resizeHandle = document.createElement("button");
+      resizeHandle.type = "button";
+      resizeHandle.className = "custom-element-video-resize";
+      resizeHandle.textContent = "⤡";
+      resizeHandle.setAttribute("aria-label", "Videogröße anpassen");
+      node.append(frame, dragHandle, resizeHandle);
     }
 
-    node.addEventListener("pointerdown", (event) => {
+    const startDrag = (event) => {
       if (node.isContentEditable || event.button !== 0) return;
       event.preventDefault();
       selectElement(item.id);
-      node.setPointerCapture(event.pointerId);
+      const dragTarget = event.currentTarget;
+      const pointerId = event.pointerId;
+      const isVideo = item.type === "video";
+      const eventTarget = isVideo ? window : dragTarget;
+      if (isVideo) node.classList.add("is-dragging");
+      if (eventTarget === dragTarget) dragTarget.setPointerCapture(event.pointerId);
       const bounds = slide.getBoundingClientRect();
       const startX = event.clientX;
       const startY = event.clientY;
       const originX = item.x;
       const originY = item.y;
       const move = (moveEvent) => {
+        if (moveEvent.pointerId !== pointerId) return;
         item.x = Math.min(98, Math.max(2, originX + ((moveEvent.clientX - startX) / bounds.width) * 100));
         item.y = Math.min(96, Math.max(4, originY + ((moveEvent.clientY - startY) / bounds.height) * 100));
         node.style.left = `${item.x}%`;
         node.style.top = `${item.y}%`;
       };
-      const finish = () => {
-        node.removeEventListener("pointermove", move);
-        node.removeEventListener("pointerup", finish);
-        node.removeEventListener("pointercancel", finish);
+      const finish = (finishEvent) => {
+        if (finishEvent.pointerId !== pointerId) return;
+        if (isVideo) node.classList.remove("is-dragging");
+        eventTarget.removeEventListener("pointermove", move);
+        eventTarget.removeEventListener("pointerup", finish);
+        eventTarget.removeEventListener("pointercancel", finish);
         saveSlideElements(index, getSlideElements(index).map((stored) => stored.id === item.id ? item : stored));
       };
-      node.addEventListener("pointermove", move);
-      node.addEventListener("pointerup", finish, { once: true });
-      node.addEventListener("pointercancel", finish, { once: true });
-    });
+      eventTarget.addEventListener("pointermove", move);
+      eventTarget.addEventListener("pointerup", finish, { once: true });
+      eventTarget.addEventListener("pointercancel", finish, { once: true });
+    };
+    if (item.type === "video") {
+      node.querySelector(".custom-element-video-drag").addEventListener("pointerdown", startDrag);
+      node.querySelector(".custom-element-video-resize").addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        selectElement(item.id);
+        const pointerId = event.pointerId;
+        const bounds = slide.getBoundingClientRect();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startWidth = item.width;
+        node.classList.add("is-resizing");
+        const move = (moveEvent) => {
+          if (moveEvent.pointerId !== pointerId) return;
+          const deltaX = ((moveEvent.clientX - startX) / bounds.width) * 100;
+          const deltaY = ((moveEvent.clientY - startY) / bounds.height) * 100;
+          item.width = Math.min(90, Math.max(8, startWidth + (deltaX + deltaY) / 2));
+          node.style.width = `${item.width}%`;
+          node.style.height = `${item.width * 9 / 16}%`;
+        };
+        const finish = (finishEvent) => {
+          if (finishEvent.pointerId !== pointerId) return;
+          node.classList.remove("is-resizing");
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", finish);
+          window.removeEventListener("pointercancel", finish);
+          saveSlideElements(index, getSlideElements(index).map((stored) => stored.id === item.id ? item : stored));
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", finish, { once: true });
+        window.addEventListener("pointercancel", finish, { once: true });
+      });
+    } else {
+      node.addEventListener("pointerdown", startDrag);
+    }
 
     layer.append(node);
   });
@@ -552,6 +626,33 @@ function renderLayoutGallery() {
   });
 }
 
+function registerEditableElement(element) {
+  if (registeredEditableElements.has(element)) return;
+  registeredEditableElements.add(element);
+  element.dataset.defaultText ??= element.textContent;
+  element.addEventListener("input", () => saveText(element));
+  element.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.preventDefault();
+  });
+}
+
+function createStarterSlide(layout, id) {
+  const sourceSlide = slides[layout.sourceSlideIndex];
+  if (!sourceSlide) throw new Error(`Die Startfolie „${layout.name}“ ist nicht verfügbar.`);
+  const slide = sourceSlide.cloneNode(true);
+  slide.classList.remove("is-entering");
+  slide.hidden = true;
+  slide.id = id;
+  slide.dataset.layoutId = layout.id;
+  slide.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
+  slide.querySelectorAll("[data-editable]").forEach((element) => {
+    element.dataset.editable = `template-${id}-${element.dataset.editable}`;
+    editableElements.push(element);
+    registerEditableElement(element);
+  });
+  return slide;
+}
+
 function addSlideFromLayout(layoutId) {
   const layout = SLIDE_LAYOUTS.find((item) => item.id === layoutId);
   if (!layout) return;
@@ -560,51 +661,59 @@ function addSlideFromLayout(layoutId) {
     return;
   }
 
-  const slide = document.createElement("section");
-  slide.className = `slide slide-layout slide-layout-${layout.id}`;
-  slide.dataset.slide = "";
-  slide.dataset.layoutId = layout.id;
-  slide.hidden = true;
-  const number = document.createElement("span");
-  number.className = "slide-number";
-  number.innerHTML = "00 <i>/ 00</i>";
-  const decorations = document.createElement("div");
-  decorations.className = "layout-decorations";
-  decorations.setAttribute("aria-hidden", "true");
-  const main = document.createElement("div");
-  main.className = "layout-canvas";
-
-  if (layout.id === "columns") {
-    main.innerHTML = '<div class="layout-column layout-column-one"></div><div class="layout-column layout-column-two"></div>';
-  } else if (layout.id === "image") {
-    main.innerHTML = '<div class="layout-image-placeholder"><span>＋ BILD ÜBER „ELEMENTE“ EINFÜGEN</span></div>';
-  } else if (layout.id === "video") {
-    main.innerHTML = '<div class="layout-video-placeholder"><span>▶</span><p>VIDEO PER YOUTUBE- ODER VIMEO-LINK EINFÜGEN</p></div>';
-  } else if (layout.id === "quote") {
-    main.innerHTML = '<span class="layout-quote-mark">“</span>';
-  } else if (layout.id === "section") {
-    main.innerHTML = '<span class="layout-section-mark">NEUES KAPITEL</span>';
+  const slideId = crypto.randomUUID();
+  const editableElementCount = editableElements.length;
+  let slide;
+  if (layout.sourceSlideIndex !== undefined) {
+    slide = createStarterSlide(layout, slideId);
   } else {
-    main.innerHTML = '<div class="layout-title-rule"></div>';
-  }
+    slide = document.createElement("section");
+    slide.className = `slide slide-layout slide-layout-${layout.id}`;
+    slide.dataset.slide = "";
+    slide.dataset.layoutId = layout.id;
+    slide.id = slideId;
+    slide.hidden = true;
+    const number = document.createElement("span");
+    number.className = "slide-number";
+    number.innerHTML = "00 <i>/ 00</i>";
+    const decorations = document.createElement("div");
+    decorations.className = "layout-decorations";
+    decorations.setAttribute("aria-hidden", "true");
+    const main = document.createElement("div");
+    main.className = "layout-canvas";
 
-  slide.append(decorations, main, number);
+    if (layout.id === "columns") {
+      main.innerHTML = '<div class="layout-column layout-column-one"></div><div class="layout-column layout-column-two"></div>';
+    } else if (layout.id === "image") {
+      main.innerHTML = '<div class="layout-image-placeholder"><span>＋ BILD ÜBER „ELEMENTE“ EINFÜGEN</span></div>';
+    } else if (layout.id === "video") {
+      main.innerHTML = '<div class="layout-video-placeholder"><span>▶</span><p>VIDEO PER YOUTUBE- ODER VIMEO-LINK EINFÜGEN</p></div>';
+    } else if (layout.id === "quote") {
+      main.innerHTML = '<span class="layout-quote-mark">“</span>';
+    } else if (layout.id === "section") {
+      main.innerHTML = '<span class="layout-section-mark">NEUES KAPITEL</span>';
+    } else {
+      main.innerHTML = '<div class="layout-title-rule"></div>';
+    }
+
+    slide.append(decorations, main, number);
+  }
   stage.append(slide);
   slides.push(slide);
   const newIndex = slides.length - 1;
   const items = [];
-  if (layout.id === "columns") {
+  if (layout.sourceSlideIndex === undefined && layout.id === "columns") {
     items.push(
       { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 17, width: 76, size: 3.8, color: "#171717", bold: true },
       { id: crypto.randomUUID(), type: "text", text: layout.first, x: 26, y: 51, width: 34, size: 3.1, color: "#ef3828", bold: true },
       { id: crypto.randomUUID(), type: "text", text: layout.second, x: 70, y: 51, width: 34, size: 3.1, color: "#171717", bold: true },
     );
-  } else if (layout.id === "quote") {
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "quote") {
     items.push(
       { id: crypto.randomUUID(), type: "text", text: layout.title, x: 49, y: 48, width: 72, size: 4.7, color: "#171717", bold: true, family: "Georgia, serif", align: "center" },
       { id: crypto.randomUUID(), type: "text", text: layout.subtitle, x: 50, y: 75, width: 55, size: 1.8, color: "#ef3828", align: "center" },
     );
-  } else {
+  } else if (layout.sourceSlideIndex === undefined) {
     const titleY = layout.id === "cover" ? 43 : layout.id === "section" ? 47 : layout.id === "video" ? 18 : 37;
     items.push(
       { id: crypto.randomUUID(), type: "text", text: layout.title, x: 49, y: titleY, width: 76, size: layout.id === "cover" || layout.id === "section" ? 6.2 : 4.4, color: "#171717", bold: true, align: layout.id === "cover" || layout.id === "section" ? "center" : "left" },
@@ -615,12 +724,17 @@ function addSlideFromLayout(layoutId) {
   try {
     localStorage.setItem(`${STORAGE_PREFIX}elements:${newIndex}`, JSON.stringify(items));
     const specs = JSON.parse(localStorage.getItem(DYNAMIC_SLIDES_KEY) || "[]");
-    specs.push({ id: slide.id || crypto.randomUUID(), layoutId });
-    slide.id = specs.at(-1).id;
+    if (!Array.isArray(specs)) throw new Error("Die gespeicherten Folienvorlagen sind ungültig.");
+    specs.push({ id: slideId, layoutId });
     localStorage.setItem(DYNAMIC_SLIDES_KEY, JSON.stringify(specs));
   } catch (error) {
     slide.remove();
     slides.pop();
+    editableElements.slice(editableElementCount).forEach((element) => {
+      localStorage.removeItem(`${STORAGE_PREFIX}${element.dataset.editable}`);
+    });
+    editableElements.splice(editableElementCount);
+    localStorage.removeItem(`${STORAGE_PREFIX}elements:${newIndex}`);
     console.error("Die neue Folie konnte nicht gespeichert werden.", error);
     showStatus("Neue Folie konnte nicht gespeichert werden. Prüfe den verfügbaren Browserspeicher.");
     return;
@@ -642,7 +756,14 @@ function loadDynamicSlides() {
   if (!Array.isArray(specs)) return;
 
   specs.slice(0, 40).forEach((spec) => {
-    if (!spec || typeof spec.id !== "string" || !SLIDE_LAYOUTS.some((layout) => layout.id === spec.layoutId)) return;
+    const layout = SLIDE_LAYOUTS.find((item) => item.id === spec?.layoutId);
+    if (!spec || typeof spec.id !== "string" || !layout) return;
+    if (layout.sourceSlideIndex !== undefined) {
+      const slide = createStarterSlide(layout, spec.id);
+      stage.append(slide);
+      slides.push(slide);
+      return;
+    }
     const slide = document.createElement("section");
     slide.className = `slide slide-layout slide-layout-${spec.layoutId}`;
     slide.dataset.slide = "";
@@ -752,8 +873,8 @@ function updateNimAssistantState() {
   chatInput.disabled = !configured || aiBusy;
   chatSend.disabled = !configured || aiBusy;
   aiCapabilityNote.textContent = configured
-    ? `NVIDIA NIM bereit · ${nimSettings.model}`
-    : "NVIDIA NIM ist noch nicht eingerichtet. Trage deinen API-Schlüssel in den KI-Einstellungen ein.";
+    ? `Schlüssel lokal gespeichert · ${nimSettings.model}. NVIDIA blockiert direkte Browser-Anfragen von GitHub Pages (CORS); ein Server-Proxy ist erforderlich.`
+    : "NVIDIA blockiert direkte Browser-Anfragen von GitHub Pages (CORS). Für Chat und Info-Check ist ein Server-Proxy erforderlich.";
   nimApiKeyInput.value = getStoredNimApiKey();
   nimModelInput.value = nimSettings.model;
   nimTemperatureInput.value = nimSettings.temperature.toFixed(1);
@@ -792,7 +913,7 @@ async function requestNim(messages, includeTools) {
     if (error instanceof DOMException && error.name === "TimeoutError") {
       throw new Error("Die NVIDIA-Anfrage hat zu lange gedauert. Versuche es erneut.");
     }
-    throw new Error("NVIDIA NIM ist nicht erreichbar. Prüfe Internetverbindung und Browser-CORS-Einstellungen.");
+    throw new Error("NVIDIA NIM antwortet nicht im Browser. Die NVIDIA-API gibt für diese GitHub-Pages-Webseite keine CORS-Freigabe zurück. Für den Chat wird ein eigener Server-Proxy benötigt; den API-Schlüssel niemals in den Quellcode schreiben.");
   }
 
   if (!response.ok) {
@@ -859,7 +980,7 @@ function saveNimSettings(event) {
     nimSettings = nextSettings;
     nimSettingsDialog.close();
     updateNimAssistantState();
-    showStatus("NVIDIA NIM eingerichtet. API-Schlüssel wird nur bei einer KI-Anfrage an NVIDIA gesendet.");
+    showStatus("API-Schlüssel lokal gespeichert. Chat und Info-Check benötigen wegen CORS einen Server-Proxy.");
   } catch (error) {
     console.error("Die NVIDIA-Einstellungen konnten nicht gespeichert werden.", error);
     nimSettingsStatus.textContent = "Speichern im Browser nicht möglich. Prüfe die Speichereinstellungen.";
@@ -1162,7 +1283,7 @@ async function checkCurrentSlide() {
       addCheckResult("NVIDIA NIM nicht verfügbar", error instanceof Error ? error.message : "Nutze die Hinweise zum Quellen-Check.");
     }
   } else {
-    addCheckResult("Quellen-Check · ohne KI", "Trage deinen NVIDIA API-Schlüssel in den KI-Einstellungen ein, um diesen Check mit Nemotron auszuführen. Ohne KI prüft das Ergebnis nur Quellenlücken und Formulierungen – nicht die Wahrheit der Aussagen.");
+    addCheckResult("Quellen-Check · ohne KI", "Der KI-Check benötigt einen Server-Proxy für NVIDIA NIM. Ohne KI prüft das Ergebnis nur Quellenlücken und Formulierungen – nicht die Wahrheit der Aussagen.");
   }
   warnings.forEach((warning) => addCheckResult("Hinweis", warning));
 }
@@ -1986,7 +2107,13 @@ deleteSlideButton.addEventListener("click", () => {
     localStorage.removeItem(`${STORAGE_PREFIX}elements:${lastIndex}`);
     localStorage.removeItem(`${TRANSITION_STORAGE_PREFIX}${lastIndex}`);
     localStorage.setItem(DYNAMIC_SLIDES_KEY, JSON.stringify(specs));
-    slides[deletedIndex].remove();
+    const removedSlide = slides[deletedIndex];
+    removedSlide.querySelectorAll("[data-editable]").forEach((element) => {
+      localStorage.removeItem(`${STORAGE_PREFIX}${element.dataset.editable}`);
+    });
+    const removedEditables = new Set(removedSlide.querySelectorAll("[data-editable]"));
+    editableElements.splice(0, editableElements.length, ...editableElements.filter((element) => !removedEditables.has(element)));
+    removedSlide.remove();
     slides.splice(deletedIndex, 1);
     slides.forEach((slide, index) => {
       const dot = dotsContainer.children[index];
@@ -2112,10 +2239,7 @@ templateSelect.addEventListener("change", () => {
 });
 
 editableElements.forEach((element) => {
-  element.addEventListener("input", () => saveText(element));
-  element.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") event.preventDefault();
-  });
+  registerEditableElement(element);
 });
 
 document.addEventListener("fullscreenchange", () => {

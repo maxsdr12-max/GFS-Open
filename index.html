@@ -9,9 +9,9 @@
       content="Eine klare, direkt anpassbare Präsentationsvorlage für deine GFS mit auswählbaren Folienanimationen."
     />
     <title>GFS Studio – Präsentationsvorlage</title>
-    <link rel="stylesheet" href="./styles.css?v=7" />
+    <link rel="stylesheet" href="./styles.css?v=10" />
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.1.0/model-viewer.min.js"></script>
-    <script type="module" src="./app.js?v=7"></script>
+    <script type="module" src="./app.js?v=10"></script>
   </head>
   <body>
     <main class="app">
@@ -93,7 +93,7 @@
               <button id="chat-send" type="submit" disabled aria-label="Nachricht senden">↑</button>
             </form>
             <button class="nim-inline-settings" id="nim-inline-settings" type="button">NVIDIA NIM einrichten oder ändern</button>
-            <p class="ai-privacy-note">Frage und aktuelle Folie gehen direkt an NVIDIA NIM. Bei aktivierten Werkzeugen wird eine Wikipedia-Suche direkt an Wikimedia gesendet. Der Schlüssel bleibt in diesem Browser.</p>
+            <p class="ai-privacy-note">NVIDIA NIM benötigt wegen CORS einen Server-Proxy. Bei aktivierten Werkzeugen wird eine Wikipedia-Suche direkt an Wikimedia gesendet.</p>
           </section>
           <section class="assistant-view" id="assistant-check-view" role="tabpanel" aria-labelledby="assistant-check-tab" hidden>
             <p class="panel-kicker">QUELLEN UND AUSSAGEN</p>
@@ -477,7 +477,7 @@
             </div>
             <button class="panel-close" id="nim-settings-close" type="button" aria-label="Einstellungen schließen">×</button>
           </div>
-          <p class="nim-settings-intro">Trage deinen NVIDIA API-Schlüssel ein. Er wird nur beim Chat oder Info-Check direkt an NVIDIA gesendet – nicht an den Betreiber dieser Seite und niemals in Projektdateien exportiert.</p>
+          <p class="nim-settings-intro">Wichtig: NVIDIA blockiert direkte API-Aufrufe aus dieser GitHub-Pages-Webseite per CORS. Chat und Info-Check funktionieren erst mit einem eigenen Server-Proxy. Der Schlüssel bleibt lokal im Browser und wird nicht in Projektdateien exportiert.</p>
           <label class="nim-field">
             <span>NVIDIA API-Schlüssel</span>
             <input id="nim-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="nvapi-…" />
@@ -495,7 +495,7 @@
             <input id="nim-remember-key" type="checkbox" checked />
             <span>API-Schlüssel auf diesem Gerät merken <small>Deaktivieren für Sitzungsspeicherung. Auf gemeinsam genutzten Geräten nicht aktivieren.</small></span>
           </label>
-          <div class="nim-security-note">Dein Schlüssel wird ausschließlich lokal im Browser gespeichert. NVIDIA verarbeitet jede Anfrage gemäß den Bedingungen deines NVIDIA-Kontos. Teile den Schlüssel nicht und verwende die Seite nur auf einem vertrauenswürdigen Gerät.</div>
+          <div class="nim-security-note">Der Schlüssel wird lokal im Browser gespeichert. Für einen Server-Proxy muss er als geheimes Server-Secret eingerichtet werden – niemals in den Quellcode oder ein öffentliches GitHub-Repository schreiben.</div>
           <div class="nim-settings-actions">
             <button class="project-button project-button-secondary" id="nim-clear-key" type="button">Schlüssel entfernen</button>
             <button class="present-button" id="nim-save-settings" type="submit">Einstellungen speichern</button>
