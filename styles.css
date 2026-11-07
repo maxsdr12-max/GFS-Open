@@ -17,7 +17,7 @@
 }
 
 body {
-  min-width: 760px;
+  min-width: 900px;
   min-height: 100vh;
   margin: 0;
   background: #171717;
@@ -42,7 +42,7 @@ select:focus-visible {
 
 .app {
   display: flex;
-  width: min(100%, 1600px);
+  width: min(100%, 1920px);
   min-height: 100vh;
   flex-direction: column;
   margin: 0 auto;
@@ -161,7 +161,7 @@ select:focus-visible {
 
 .presentation {
   display: flex;
-  width: min(100%, 1500px);
+  width: min(100%, 1800px);
   flex: 1;
   flex-direction: column;
   justify-content: space-between;
@@ -297,28 +297,29 @@ select:focus-visible {
 .workspace {
   display: grid;
   width: 100%;
-  grid-template-columns: minmax(0, 1400px);
+  grid-template-columns: minmax(0, 1700px);
   justify-content: center;
-  align-items: stretch;
+  align-items: center;
   gap: 18px;
 }
 
 .workspace.is-editor-open {
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
 }
 
 .workspace.is-assistant-open {
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
 }
 
 .workspace.is-assistant-open.is-editor-open {
-  grid-template-columns: 260px minmax(0, 1fr) 240px;
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr) minmax(280px, 320px);
 }
 
 .assistant-panel {
   display: flex;
   min-width: 0;
-  max-height: min(65vw, 650px);
+  min-height: 0;
+  max-height: min(90vh, 900px);
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #44433f;
@@ -361,6 +362,10 @@ select:focus-visible {
   flex-direction: column;
   overflow: auto;
   padding: 15px 14px;
+}
+
+#assistant-chat-view {
+  overflow: hidden;
 }
 
 .assistant-view[hidden] {
@@ -424,7 +429,7 @@ select:focus-visible {
 
 .chat-messages {
   display: flex;
-  min-height: 130px;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
   gap: 10px;
@@ -791,7 +796,7 @@ select:focus-visible {
 .stage {
   position: relative;
   width: 100%;
-  max-width: 1400px;
+  max-width: 1700px;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--paper);
@@ -808,7 +813,7 @@ select:focus-visible {
 .element-panel {
   display: flex;
   min-width: 0;
-  max-height: min(65vw, 650px);
+  max-height: min(75vw, 800px);
   flex-direction: column;
   padding: 18px 16px 14px;
   border: 1px solid #44433f;
@@ -1395,7 +1400,7 @@ select:focus-visible {
 
 .cover-title {
   display: flex;
-  max-width: 75%;
+  max-width: 85%;
   flex-direction: column;
   gap: 3px;
   margin: 0;
@@ -1410,7 +1415,7 @@ select:focus-visible {
 }
 
 .cover-copy {
-  max-width: 430px;
+  max-width: 550px;
   margin: 23px 0 0;
   color: #57554f;
   font-family: Georgia, serif;
@@ -1498,7 +1503,7 @@ select:focus-visible {
 }
 
 .big-question {
-  max-width: 78%;
+  max-width: 90%;
   margin: 0;
   font-size: clamp(38px, 6.1vw, 74px);
   font-weight: 800;
@@ -1511,7 +1516,7 @@ select:focus-visible {
 }
 
 .slide-hint {
-  max-width: 510px;
+  max-width: 650px;
   margin: 22px 0 0;
   color: #66645f;
   font-family: Georgia, serif;
@@ -1536,7 +1541,7 @@ select:focus-visible {
 .slide-title {
   position: relative;
   z-index: 1;
-  max-width: 82%;
+  max-width: 90%;
   margin: 0 0 27px;
   font-size: clamp(30px, 4vw, 48px);
   font-weight: 800;
@@ -1548,7 +1553,7 @@ select:focus-visible {
   position: relative;
   z-index: 1;
   display: flex;
-  max-width: 78%;
+  max-width: 90%;
   flex-direction: column;
 }
 
@@ -1659,7 +1664,7 @@ select:focus-visible {
 }
 
 .idea-card > p:last-of-type {
-  max-width: 230px;
+  max-width: 300px;
   margin: 9px 0 0;
   color: #66645f;
   font-family: Georgia, serif;
@@ -1706,7 +1711,7 @@ select:focus-visible {
 }
 
 .wow-copy {
-  max-width: 440px;
+  max-width: 550px;
   margin: 15px 0 0;
   color: #57554f;
   font-family: Georgia, serif;
@@ -1743,7 +1748,7 @@ select:focus-visible {
 }
 
 .tiny-note {
-  max-width: 650px;
+  max-width: 800px;
   margin: 23px 0 0;
   color: #77746e;
   font-family: Georgia, serif;
@@ -1764,7 +1769,7 @@ select:focus-visible {
 }
 
 .takeaway-lead {
-  max-width: 680px;
+  max-width: 850px;
   margin: 0;
   color: var(--red);
   font-family: Georgia, serif;
@@ -1776,7 +1781,7 @@ select:focus-visible {
 
 .takeaway-bottom {
   display: flex;
-  max-width: 640px;
+  max-width: 800px;
   align-items: flex-start;
   gap: 15px;
   margin-top: 23px;
@@ -1824,7 +1829,7 @@ select:focus-visible {
 .questions-copy {
   position: relative;
   z-index: 1;
-  max-width: 420px;
+  max-width: 550px;
   margin: 24px 0 0;
   color: #57554f;
   font-family: Georgia, serif;
@@ -1913,7 +1918,7 @@ select:focus-visible {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 230px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 20px;
 }
 
@@ -2583,7 +2588,7 @@ body.is-presenting {
   transform-origin: center;
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1100px) {
   .workspace.is-editor-open {
     grid-template-columns: minmax(0, 1fr) 230px;
     gap: 12px;
@@ -2607,12 +2612,12 @@ body.is-presenting {
   }
 
   .workspace.is-assistant-open.is-editor-open {
-    grid-template-columns: 210px minmax(420px, 1fr) 210px;
-    gap: 10px;
+    grid-template-columns: minmax(185px, 0.7fr) minmax(0, 1.6fr) minmax(185px, 0.7fr);
+    gap: 8px;
   }
 }
 
-@media (max-height: 760px) and (min-width: 701px) {
+@media (max-height: 760px) and (min-width: 901px) {
   .element-panel {
     max-height: 76vh;
     overflow-y: auto;
