@@ -40,10 +40,10 @@ const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const MAX_VIDEO_COUNT = 5;
 const MAX_PROJECT_SIZE = 4 * 1024 * 1024;
 const TEMPLATE_IDS = ["editorial", "ocean", "botanical", "terracotta", "cobalt", "lavender"];
-const NIM_MODEL_DEFAULT = "nvidia/nemotron-3-ultra-550b-a55b";
-const NIM_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const NIM_SETTINGS_KEY = `${STORAGE_PREFIX}nim:settings`;
-const NIM_API_KEY_KEY = `${STORAGE_PREFIX}nim:api-key`;
+const OPENROUTER_MODEL_DEFAULT = "google/gemma-2-9b-it:free";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_SETTINGS_KEY = `${STORAGE_PREFIX}openrouter:settings`;
+const OPENROUTER_API_KEY_KEY = `${STORAGE_PREFIX}openrouter:api-key`;
 
 let activeIndex = -1;
 let editing = false;
@@ -76,6 +76,10 @@ const addTextButton = document.querySelector("#add-text-button");
 const addShapeButton = document.querySelector("#add-shape-button");
 const addImageButton = document.querySelector("#add-image-button");
 const addVideoButton = document.querySelector("#add-video-button");
+const addStickyButton = document.querySelector("#add-sticky-button");
+const addArrowButton = document.querySelector("#add-arrow-button");
+const addIconButton = document.querySelector("#add-icon-button");
+const addChartButton = document.querySelector("#add-chart-button");
 const imageFileInput = document.querySelector("#image-file-input");
 const saveIndicator = document.querySelector("#save-indicator");
 const exportProjectButton = document.querySelector("#export-project-button");
@@ -89,6 +93,17 @@ const assistantPanel = document.querySelector("#assistant-panel");
 const assistantToggle = document.querySelector("#assistant-toggle");
 const assistantTabs = Array.from(document.querySelectorAll(".assistant-tab"));
 const assistantViews = Array.from(document.querySelectorAll(".assistant-view"));
+const roadmapCanvas = document.querySelector("#roadmap-canvas");
+const roadmapProperties = document.querySelector("#roadmap-properties");
+const roadmapAddPhase = document.querySelector("#roadmap-add-phase");
+const roadmapAddMilestone = document.querySelector("#roadmap-add-milestone");
+const roadmapAddDependency = document.querySelector("#roadmap-add-dependency");
+const roadmapElementTitle = document.querySelector("#roadmap-element-title");
+const roadmapElementDate = document.querySelector("#roadmap-element-date");
+const roadmapElementStatus = document.querySelector("#roadmap-element-status");
+const roadmapElementColor = document.querySelector("#roadmap-element-color");
+const roadmapDeleteElement = document.querySelector("#roadmap-delete-element");
+const roadmapApply = document.querySelector("#roadmap-apply");
 const chatForm = document.querySelector("#chat-form");
 const chatInput = document.querySelector("#chat-input");
 const chatSend = document.querySelector("#chat-send");
@@ -102,24 +117,24 @@ const checkSlideButton = document.querySelector("#check-slide-button");
 const checkResults = document.querySelector("#check-results");
 const layoutGallery = document.querySelector("#layout-gallery");
 const deleteSlideButton = document.querySelector("#delete-slide-button");
-const nimSettingsDialog = document.querySelector("#nim-settings-dialog");
-const nimSettingsForm = document.querySelector("#nim-settings-form");
-const nimSettingsToggle = document.querySelector("#nim-settings-toggle");
-const nimInlineSettings = document.querySelector("#nim-inline-settings");
-const nimSettingsClose = document.querySelector("#nim-settings-close");
-const nimApiKeyInput = document.querySelector("#nim-api-key");
-const nimModelInput = document.querySelector("#nim-model");
-const nimTemperatureInput = document.querySelector("#nim-temperature");
-const nimTemperatureValue = document.querySelector("#nim-temperature-value");
-const nimRememberKeyInput = document.querySelector("#nim-remember-key");
-const nimClearKeyButton = document.querySelector("#nim-clear-key");
-const nimSettingsStatus = document.querySelector("#nim-settings-status");
+const openRouterSettingsDialog = document.querySelector("#nim-settings-dialog");
+const openRouterSettingsForm = document.querySelector("#nim-settings-form");
+const openRouterSettingsToggle = document.querySelector("#nim-settings-toggle");
+const openRouterInlineSettings = document.querySelector("#nim-inline-settings");
+const openRouterSettingsClose = document.querySelector("#nim-settings-close");
+const openRouterApiKeyInput = document.querySelector("#nim-api-key");
+const openRouterModelInput = document.querySelector("#nim-model");
+const openRouterTemperatureInput = document.querySelector("#nim-temperature");
+const openRouterTemperatureValue = document.querySelector("#nim-temperature-value");
+const openRouterRememberKeyInput = document.querySelector("#nim-remember-key");
+const openRouterClearKeyButton = document.querySelector("#nim-clear-key");
+const openRouterSettingsStatus = document.querySelector("#nim-settings-status");
 let aiBusy = false;
-let nimSettings = loadNimSettings();
+let openRouterSettings = loadOpenRouterSettings();
 let chatConversation = [];
 const registeredEditableElements = new WeakSet();
 
-const NIM_TOOLS = [
+const OPENROUTER_TOOLS = [
   {
     type: "function",
     function: {
@@ -205,6 +220,115 @@ const NIM_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Führt eine Websuche über DuckDuckGo durch und liefert Zusammenfassungen mit Links. Gut für aktuelle Themen, Nachrichten, Definitionen.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Suchanfrage (max. 200 Zeichen)" },
+          max_results: { type: "integer", description: "Anzahl Ergebnisse (1-10, Standard 5)", minimum: 1, maximum: 10 },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "fetch_webpage",
+      description: "Lädt den Textinhalt einer Webseite herunter (via Jina AI Reader). Nützlich für Artikel, Dokumentationen, Blogposts.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Vollständige URL (http:// oder https://)" },
+          max_length: { type: "integer", description: "Maximale Zeichenlänge des zurückgegebenen Textes (500-20000, Standard 8000)", minimum: 500, maximum: 20000 },
+        },
+        required: ["url"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_images",
+      description: "Sucht Bilder über Unsplash (Demo-Key). Liefert Direktlinks zu Bildern in verschiedenen Größen. Für Präsentationsbilder, Illustrationen.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Suchbegriff (max. 100 Zeichen)" },
+          count: { type: "integer", description: "Anzahl Bilder (1-10, Standard 4)", minimum: 1, maximum: 10 },
+          orientation: { type: "string", enum: ["landscape", "portrait", "squarish"], description: "Ausrichtung (Standard: landscape)" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "fact_check",
+      description: "Prüft eine Behauptung via Websuche nach Faktencheck-Quellen. Liefert Hinweise, keine abschließende Bewertung. Für kritische Aussagen, Zitate, Statistiken.",
+      parameters: {
+        type: "object",
+        properties: {
+          claim: { type: "string", description: "Die zu prüfende Behauptung (max. 500 Zeichen)" },
+          context: { type: "string", description: "Optionaler Kontext für die Suche" },
+        },
+        required: ["claim"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_citation",
+      description: "Erstellt eine formatierte Quellenangabe in verschiedenen Zitierstilen (APA, MLA, Harvard, IEEE, Chicago). Für Literaturverweise, Bibliografien.",
+      parameters: {
+        type: "object",
+        properties: {
+          source_type: { type: "string", enum: ["website", "book", "journal_article", "video", "other"], description: "Quellentyp" },
+          style: { type: "string", enum: ["APA", "MLA", "Harvard", "IEEE", "Chicago"], description: "Zitierstil (Standard: APA)" },
+          title: { type: "string", description: "Titel der Quelle" },
+          authors: { type: "array", items: { type: "string" }, description: "Autorennamen" },
+          year: { type: "string", description: "Erscheinungsjahr" },
+          url: { type: "string", description: "URL der Quelle" },
+          publisher: { type: "string", description: "Verlag/Herausgeber" },
+          journal: { type: "string", description: "Journalname" },
+          volume: { type: "string", description: "Band/Volume" },
+          issue: { type: "string", description: "Ausgabe/Issue" },
+          pages: { type: "string", description: "Seitenzahlen" },
+          doi: { type: "string", description: "DOI" },
+          accessed_date: { type: "string", description: "Zugriffsdatum (YYYY-MM-DD, Standard: heute)" },
+        },
+        required: ["source_type", "title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "translate_text",
+      description: "Übersetzt Text zwischen Sprachen via MyMemory API. Unterstützt ISO-639-1 Codes (de, en, fr, es, it, etc.). Für fremdsprachige Quellen, internationale Präsentationen.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Zu übersetzender Text (max. 5000 Zeichen)" },
+          target_lang: { type: "string", description: "Zielsprache als ISO-639-1 Code (z. B. de, en, fr, es)" },
+          source_lang: { type: "string", description: "Quellsprache als ISO-639-1 Code (Standard: auto)" },
+        },
+        required: ["text", "target_lang"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 const SLIDE_LAYOUTS = [
@@ -215,6 +339,16 @@ const SLIDE_LAYOUTS = [
   { id: "image", name: "Bild & Text", description: "Bildfläche und verschiebbarer Titel", title: "Was zeigt dieses Bild?", subtitle: "Bild über das Elemente-Menü hinzufügen" },
   { id: "video", name: "Video", description: "YouTube- oder Vimeo-Video einbetten", title: "Ein Beispiel in Bewegung", subtitle: "Video über das Elemente-Menü hinzufügen" },
   { id: "conclusion", name: "Fazit", description: "Kernaussage und Merksatz", title: "Das Wichtigste?", subtitle: "Deine Antwort in einem klaren Satz." },
+  { id: "timeline", name: "Zeitstrahl", description: "Ereignisse chronologisch darstellen", title: "Projektzeitstrahl", subtitle: "Meilensteine & Termine" },
+  { id: "process", name: "Prozess", description: "Schritte & Abläufe visualisieren", title: "Prozessschritte", subtitle: "Von Anfang bis Ziel" },
+  { id: "comparison", name: "Vergleich", description: "Gegenüberstellung von Optionen", title: "Option A vs. Option B", subtitle: "Vor- & Nachteile" },
+  { id: "metrics", name: "Kennzahlen", description: "Wichtige Metriken & KPIs", title: "Dashboard", subtitle: "Zahlen, Daten, Fakten" },
+  { id: "team", name: "Team", description: "Teammitglieder vorstellen", title: "Unser Team", subtitle: "Rollen & Kompetenzen" },
+  { id: "roadmap", name: "Roadmap", description: "Strategische Planung & Phasen", title: "Produkt-Roadmap", subtitle: "Vision → Strategie → Umsetzung" },
+  { id: "kanban", name: "Kanban-Board", description: "Aufgaben nach Status organisieren", title: "Projekt-Board", subtitle: "To Do · In Progress · Done" },
+  { id: "mindmap", name: "Mindmap", description: "Ideen verzweigt darstellen", title: "Zentrale Idee", subtitle: "Verzweigungen & Verbindungen" },
+  { id: "funnel", name: "Trichter", description: "Konversionspfade visualisieren", title: "Sales Funnel", subtitle: "Awareness → Conversion" },
+  { id: "swot", name: "SWOT-Analyse", description: "Stärken, Schwächen, Chancen, Risiken", title: "SWOT", subtitle: "Strategische Lagebeurteilung" },
   { id: "starter-cover", name: "Startfolie · Titel", description: "Titelfolie aus dem GFS-Starter", sourceSlideIndex: 0 },
   { id: "starter-question", name: "Leitfrage", description: "Einstieg mit Frage ans Publikum", sourceSlideIndex: 1 },
   { id: "starter-plan", name: "Fahrplan", description: "Drei Stationen für deinen Vortrag", sourceSlideIndex: 2 },
@@ -343,17 +477,28 @@ function renderSlideElements(index) {
       frame.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
       frame.allowFullscreen = true;
       frame.referrerPolicy = "strict-origin-when-cross-origin";
-      const dragHandle = document.createElement("button");
-      dragHandle.type = "button";
-      dragHandle.className = "custom-element-video-drag";
-      dragHandle.textContent = "⠿ Video verschieben";
-      dragHandle.setAttribute("aria-label", "Video verschieben");
-      const resizeHandle = document.createElement("button");
-      resizeHandle.type = "button";
-      resizeHandle.className = "custom-element-video-resize";
-      resizeHandle.textContent = "⤡";
-      resizeHandle.setAttribute("aria-label", "Videogröße anpassen");
+    }
+
+    // Add drag handle to all element types
+    const dragHandle = document.createElement("button");
+    dragHandle.type = "button";
+    dragHandle.className = "custom-element-drag";
+    dragHandle.textContent = "⠿";
+    dragHandle.setAttribute("aria-label", "Element verschieben");
+    dragHandle.setAttribute("title", "Ziehen zum Verschieben");
+    
+    // Add resize handle to all element types
+    const resizeHandle = document.createElement("button");
+    resizeHandle.type = "button";
+    resizeHandle.className = "custom-element-resize";
+    resizeHandle.textContent = "⤡";
+    resizeHandle.setAttribute("aria-label", "Elementgröße anpassen");
+    resizeHandle.setAttribute("title", "Ziehen zum Skalieren");
+
+    if (item.type === "video") {
       node.append(frame, dragHandle, resizeHandle);
+    } else {
+      node.append(dragHandle, resizeHandle);
     }
 
     const startDrag = (event) => {
@@ -390,42 +535,55 @@ function renderSlideElements(index) {
       eventTarget.addEventListener("pointerup", finish, { once: true });
       eventTarget.addEventListener("pointercancel", finish, { once: true });
     };
-    if (item.type === "video") {
-      node.querySelector(".custom-element-video-drag").addEventListener("pointerdown", startDrag);
-      node.querySelector(".custom-element-video-resize").addEventListener("pointerdown", (event) => {
-        if (event.button !== 0) return;
-        event.preventDefault();
-        event.stopPropagation();
-        selectElement(item.id);
-        const pointerId = event.pointerId;
-        const bounds = slide.getBoundingClientRect();
-        const startX = event.clientX;
-        const startY = event.clientY;
-        const startWidth = item.width;
-        node.classList.add("is-resizing");
-        const move = (moveEvent) => {
-          if (moveEvent.pointerId !== pointerId) return;
-          const deltaX = ((moveEvent.clientX - startX) / bounds.width) * 100;
-          const deltaY = ((moveEvent.clientY - startY) / bounds.height) * 100;
-          item.width = Math.min(90, Math.max(8, startWidth + (deltaX + deltaY) / 2));
-          node.style.width = `${item.width}%`;
+    // Drag handle for all element types
+    node.querySelector(".custom-element-drag").addEventListener("pointerdown", startDrag);
+    
+    // Resize handle for all element types
+    node.querySelector(".custom-element-resize").addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectElement(item.id);
+      const pointerId = event.pointerId;
+      const bounds = slide.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startWidth = item.width;
+      const startHeight = item.height || (item.type === "video" ? item.width * 9 / 16 : 18);
+      node.classList.add("is-resizing");
+      const move = (moveEvent) => {
+        if (moveEvent.pointerId !== pointerId) return;
+        const deltaX = ((moveEvent.clientX - startX) / bounds.width) * 100;
+        const deltaY = ((moveEvent.clientY - startY) / bounds.height) * 100;
+        item.width = Math.min(90, Math.max(8, startWidth + (deltaX + deltaY) / 2));
+        node.style.width = `${item.width}%`;
+        if (item.type === "video") {
           node.style.height = `${item.width * 9 / 16}%`;
-        };
-        const finish = (finishEvent) => {
-          if (finishEvent.pointerId !== pointerId) return;
-          node.classList.remove("is-resizing");
-          window.removeEventListener("pointermove", move);
-          window.removeEventListener("pointerup", finish);
-          window.removeEventListener("pointercancel", finish);
-          saveSlideElements(index, getSlideElements(index).map((stored) => stored.id === item.id ? item : stored));
-        };
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", finish, { once: true });
-        window.addEventListener("pointercancel", finish, { once: true });
-      });
-    } else {
-      node.addEventListener("pointerdown", startDrag);
-    }
+        } else if (item.type === "shape") {
+          item.height = Math.min(90, Math.max(5, startHeight + (deltaX + deltaY) / 2));
+          node.style.height = `${item.height}%`;
+        } else if (item.type === "image") {
+          // For images, maintain aspect ratio or allow free resize
+          item.height = Math.min(85, Math.max(10, startHeight + (deltaX + deltaY) / 2));
+          node.style.height = `${item.height}%`;
+        } else if (item.type === "text") {
+          // For text, scale font size
+          item.size = Math.min(7, Math.max(1.4, (item.size || 3) + (deltaX + deltaY) / 20));
+          node.style.setProperty("--element-size", item.size);
+        }
+      };
+      const finish = (finishEvent) => {
+        if (finishEvent.pointerId !== pointerId) return;
+        node.classList.remove("is-resizing");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", finish);
+        saveSlideElements(index, getSlideElements(index).map((stored) => stored.id === item.id ? item : stored));
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", finish, { once: true });
+      window.addEventListener("pointercancel", finish, { once: true });
+    });
 
     layer.append(node);
   });
@@ -692,6 +850,26 @@ function addSlideFromLayout(layoutId) {
       main.innerHTML = '<span class="layout-quote-mark">“</span>';
     } else if (layout.id === "section") {
       main.innerHTML = '<span class="layout-section-mark">NEUES KAPITEL</span>';
+    } else if (layout.id === "timeline") {
+      main.innerHTML = '<div class="layout-timeline"><div class="timeline-track"></div><div class="timeline-milestones"></div></div>';
+    } else if (layout.id === "process") {
+      main.innerHTML = '<div class="layout-process"><div class="process-steps"></div></div>';
+    } else if (layout.id === "comparison") {
+      main.innerHTML = '<div class="layout-comparison"><div class="comparison-left"></div><div class="comparison-divider"></div><div class="comparison-right"></div></div>';
+    } else if (layout.id === "metrics") {
+      main.innerHTML = '<div class="layout-metrics"><div class="metrics-grid"></div></div>';
+    } else if (layout.id === "team") {
+      main.innerHTML = '<div class="layout-team"><div class="team-grid"></div></div>';
+    } else if (layout.id === "roadmap") {
+      main.innerHTML = '<div class="layout-roadmap"><div class="roadmap-phases"></div></div>';
+    } else if (layout.id === "kanban") {
+      main.innerHTML = '<div class="layout-kanban"><div class="kanban-columns"></div></div>';
+    } else if (layout.id === "mindmap") {
+      main.innerHTML = '<div class="layout-mindmap"><div class="mindmap-center"></div><div class="mindmap-branches"></div></div>';
+    } else if (layout.id === "funnel") {
+      main.innerHTML = '<div class="layout-funnel"><div class="funnel-stages"></div></div>';
+    } else if (layout.id === "swot") {
+      main.innerHTML = '<div class="layout-swot"><div class="swot-grid"></div></div>';
     } else {
       main.innerHTML = '<div class="layout-title-rule"></div>';
     }
@@ -712,6 +890,110 @@ function addSlideFromLayout(layoutId) {
     items.push(
       { id: crypto.randomUUID(), type: "text", text: layout.title, x: 49, y: 48, width: 72, size: 4.7, color: "#171717", bold: true, family: "Georgia, serif", align: "center" },
       { id: crypto.randomUUID(), type: "text", text: layout.subtitle, x: 50, y: 75, width: 55, size: 1.8, color: "#ef3828", align: "center" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "timeline") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Meilenstein 1", x: 15, y: 35, width: 30, size: 2.2, color: "#ef3828", bold: true },
+      { id: crypto.randomUUID(), type: "text", text: "Q1 2024", x: 15, y: 42, width: 30, size: 1.6, color: "#57554f" },
+      { id: crypto.randomUUID(), type: "text", text: "Meilenstein 2", x: 50, y: 35, width: 30, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Q2 2024", x: 50, y: 42, width: 30, size: 1.6, color: "#57554f", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Meilenstein 3", x: 85, y: 35, width: 30, size: 2.2, color: "#ef3828", bold: true, align: "right" },
+      { id: crypto.randomUUID(), type: "text", text: "Q3 2024", x: 85, y: 42, width: 30, size: 1.6, color: "#57554f", align: "right" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "process") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Schritt 1", x: 15, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true },
+      { id: crypto.randomUUID(), type: "text", text: "Analyse", x: 15, y: 42, width: 25, size: 1.6, color: "#57554f" },
+      { id: crypto.randomUUID(), type: "text", text: "Schritt 2", x: 50, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Planung", x: 50, y: 42, width: 25, size: 1.6, color: "#57554f", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Schritt 3", x: 85, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "right" },
+      { id: crypto.randomUUID(), type: "text", text: "Umsetzung", x: 85, y: 42, width: 25, size: 1.6, color: "#57554f", align: "right" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "comparison") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Option A", x: 25, y: 35, width: 40, size: 2.8, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Vorteil 1", x: 15, y: 45, width: 30, size: 1.8, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "Vorteil 2", x: 15, y: 52, width: 30, size: 1.8, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "Option B", x: 75, y: 35, width: 40, size: 2.8, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Vorteil 1", x: 65, y: 45, width: 30, size: 1.8, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "Vorteil 2", x: 65, y: 52, width: 30, size: 1.8, color: "#171717" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "metrics") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "KPI 1", x: 20, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "85%", x: 20, y: 42, width: 25, size: 3.5, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "KPI 2", x: 50, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "1.2k", x: 50, y: 42, width: 25, size: 3.5, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "KPI 3", x: 80, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "4.7", x: 80, y: 42, width: 25, size: 3.5, color: "#171717", bold: true, align: "center" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "team") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Name 1", x: 20, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Rolle", x: 20, y: 42, width: 25, size: 1.6, color: "#57554f", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Name 2", x: 50, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Rolle", x: 50, y: 42, width: 25, size: 1.6, color: "#57554f", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Name 3", x: 80, y: 35, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Rolle", x: 80, y: 42, width: 25, size: 1.6, color: "#57554f", align: "center" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "roadmap") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Phase 1", x: 15, y: 35, width: 30, size: 2.2, color: "#ef3828", bold: true },
+      { id: crypto.randomUUID(), type: "text", text: "Q1-Q2", x: 15, y: 42, width: 30, size: 1.6, color: "#57554f" },
+      { id: crypto.randomUUID(), type: "text", text: "Phase 2", x: 50, y: 35, width: 30, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Q3-Q4", x: 50, y: 42, width: 30, size: 1.6, color: "#57554f", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Phase 3", x: 85, y: 35, width: 30, size: 2.2, color: "#ef3828", bold: true, align: "right" },
+      { id: crypto.randomUUID(), type: "text", text: "2025+", x: 85, y: 42, width: 30, size: 1.6, color: "#57554f", align: "right" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "kanban") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "To Do", x: 20, y: 30, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Aufgabe 1", x: 20, y: 38, width: 25, size: 1.6, color: "#171717", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "In Progress", x: 50, y: 30, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Aufgabe 2", x: 50, y: 38, width: 25, size: 1.6, color: "#171717", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Done", x: 80, y: 30, width: 25, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Aufgabe 3", x: 80, y: 38, width: 25, size: 1.6, color: "#171717", align: "center" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "mindmap") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 45, width: 60, size: 3.5, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Ast 1", x: 20, y: 25, width: 25, size: 2, color: "#171717", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Ast 2", x: 80, y: 25, width: 25, size: 2, color: "#171717", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Ast 3", x: 20, y: 65, width: 25, size: 2, color: "#171717", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Ast 4", x: 80, y: 65, width: 25, size: 2, color: "#171717", align: "center" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "funnel") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Awareness", x: 50, y: 28, width: 60, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "10.000", x: 50, y: 35, width: 60, size: 1.8, color: "#57554f", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Interest", x: 50, y: 48, width: 45, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "3.500", x: 50, y: 55, width: 45, size: 1.8, color: "#57554f", align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Conversion", x: 50, y: 68, width: 30, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "850", x: 50, y: 75, width: 30, size: 1.8, color: "#57554f", align: "center" },
+    );
+  } else if (layout.sourceSlideIndex === undefined && layout.id === "swot") {
+    items.push(
+      { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 12, width: 80, size: 4.2, color: "#171717", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "Stärken", x: 25, y: 30, width: 40, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "• Stärke 1", x: 15, y: 38, width: 35, size: 1.6, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "• Stärke 2", x: 15, y: 44, width: 35, size: 1.6, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "Schwächen", x: 75, y: 30, width: 40, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "• Schwäche 1", x: 65, y: 38, width: 35, size: 1.6, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "• Schwäche 2", x: 65, y: 44, width: 35, size: 1.6, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "Chancen", x: 25, y: 58, width: 40, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "• Chance 1", x: 15, y: 66, width: 35, size: 1.6, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "• Chance 2", x: 15, y: 72, width: 35, size: 1.6, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "Risiken", x: 75, y: 58, width: 40, size: 2.2, color: "#ef3828", bold: true, align: "center" },
+      { id: crypto.randomUUID(), type: "text", text: "• Risiko 1", x: 65, y: 66, width: 35, size: 1.6, color: "#171717" },
+      { id: crypto.randomUUID(), type: "text", text: "• Risiko 2", x: 65, y: 72, width: 35, size: 1.6, color: "#171717" },
     );
   } else if (layout.sourceSlideIndex === undefined) {
     const titleY = layout.id === "cover" ? 43 : layout.id === "section" ? 47 : layout.id === "video" ? 18 : 37;
@@ -779,6 +1061,16 @@ function loadDynamicSlides() {
     else if (spec.layoutId === "video") main.innerHTML = '<div class="layout-video-placeholder"><span>▶</span><p>VIDEO PER YOUTUBE- ODER VIMEO-LINK EINFÜGEN</p></div>';
     else if (spec.layoutId === "quote") main.innerHTML = '<span class="layout-quote-mark">“</span>';
     else if (spec.layoutId === "section") main.innerHTML = '<span class="layout-section-mark">NEUES KAPITEL</span>';
+    else if (spec.layoutId === "timeline") main.innerHTML = '<div class="layout-timeline"><div class="timeline-track"></div><div class="timeline-milestones"></div></div>';
+    else if (spec.layoutId === "process") main.innerHTML = '<div class="layout-process"><div class="process-steps"></div></div>';
+    else if (spec.layoutId === "comparison") main.innerHTML = '<div class="layout-comparison"><div class="comparison-left"></div><div class="comparison-divider"></div><div class="comparison-right"></div></div>';
+    else if (spec.layoutId === "metrics") main.innerHTML = '<div class="layout-metrics"><div class="metrics-grid"></div></div>';
+    else if (spec.layoutId === "team") main.innerHTML = '<div class="layout-team"><div class="team-grid"></div></div>';
+    else if (spec.layoutId === "roadmap") main.innerHTML = '<div class="layout-roadmap"><div class="roadmap-phases"></div></div>';
+    else if (spec.layoutId === "kanban") main.innerHTML = '<div class="layout-kanban"><div class="kanban-columns"></div></div>';
+    else if (spec.layoutId === "mindmap") main.innerHTML = '<div class="layout-mindmap"><div class="mindmap-center"></div><div class="mindmap-branches"></div></div>';
+    else if (spec.layoutId === "funnel") main.innerHTML = '<div class="layout-funnel"><div class="funnel-stages"></div></div>';
+    else if (spec.layoutId === "swot") main.innerHTML = '<div class="layout-swot"><div class="swot-grid"></div></div>';
     else main.innerHTML = '<div class="layout-title-rule"></div>';
     const number = document.createElement("span");
     number.className = "slide-number";
@@ -845,65 +1137,65 @@ function appendChatMessage(role, text) {
   return message;
 }
 
-function getStoredNimApiKey() {
+function getStoredOpenRouterApiKey() {
   try {
-    return localStorage.getItem(NIM_API_KEY_KEY) || sessionStorage.getItem(NIM_API_KEY_KEY) || "";
+    return localStorage.getItem(OPENROUTER_API_KEY_KEY) || sessionStorage.getItem(OPENROUTER_API_KEY_KEY) || "";
   } catch (error) {
     console.error("Der NVIDIA API-Schlüssel konnte nicht aus dem Browserspeicher gelesen werden.", error);
     return "";
   }
 }
 
-function loadNimSettings() {
+function loadOpenRouterSettings() {
   try {
-    const stored = JSON.parse(localStorage.getItem(NIM_SETTINGS_KEY) || "{}");
-    const model = typeof stored.model === "string" && stored.model.trim() ? stored.model.trim() : NIM_MODEL_DEFAULT;
+    const stored = JSON.parse(localStorage.getItem(OPENROUTER_SETTINGS_KEY) || "{}");
+    const model = typeof stored.model === "string" && stored.model.trim() ? stored.model.trim() : OPENROUTER_MODEL_DEFAULT;
     const temperature = Number.isFinite(stored.temperature) ? Math.min(1, Math.max(0, stored.temperature)) : 0.4;
     const rememberKey = stored.rememberKey !== false;
     return { model, temperature, rememberKey };
   } catch (error) {
     console.error("Die NVIDIA-Einstellungen konnten nicht geladen werden.", error);
-    return { model: NIM_MODEL_DEFAULT, temperature: 0.4, rememberKey: true };
+    return { model: OPENROUTER_MODEL_DEFAULT, temperature: 0.4, rememberKey: true };
   }
 }
 
-function updateNimAssistantState() {
-  const configured = Boolean(getStoredNimApiKey());
-  nimRememberKeyInput.checked = nimSettings.rememberKey;
+function updateOpenRouterAssistantState() {
+  const configured = Boolean(getStoredOpenRouterApiKey());
+  openRouterRememberKeyInput.checked = openRouterSettings.rememberKey;
   chatInput.disabled = !configured || aiBusy;
   chatSend.disabled = !configured || aiBusy;
   aiCapabilityNote.textContent = configured
-    ? `Schlüssel lokal gespeichert · ${nimSettings.model}. NVIDIA blockiert direkte Browser-Anfragen von GitHub Pages (CORS); ein Server-Proxy ist erforderlich.`
+    ? `Schlüssel lokal gespeichert · ${openRouterSettings.model}. OpenRouter funktioniert direkt im Browser (CORS-freundlich).`
     : "NVIDIA blockiert direkte Browser-Anfragen von GitHub Pages (CORS). Für Chat und Info-Check ist ein Server-Proxy erforderlich.";
-  nimApiKeyInput.value = getStoredNimApiKey();
-  nimModelInput.value = nimSettings.model;
-  nimTemperatureInput.value = nimSettings.temperature.toFixed(1);
-  nimTemperatureValue.value = nimSettings.temperature.toFixed(1);
+  openRouterApiKeyInput.value = getStoredOpenRouterApiKey();
+  openRouterModelInput.value = openRouterSettings.model;
+  openRouterTemperatureInput.value = openRouterSettings.temperature.toFixed(1);
+  openRouterTemperatureValue.value = openRouterSettings.temperature.toFixed(1);
 }
 
-function openNimSettings() {
-  nimSettingsStatus.textContent = "";
-  updateNimAssistantState();
-  if (!nimSettingsDialog.open) nimSettingsDialog.showModal();
-  nimApiKeyInput.focus();
+function openOpenRouterSettings() {
+  openRouterSettingsStatus.textContent = "";
+  updateOpenRouterAssistantState();
+  if (!openRouterSettingsDialog.open) openRouterSettingsDialog.showModal();
+  openRouterApiKeyInput.focus();
 }
 
-async function requestNim(messages, includeTools) {
-  const apiKey = getStoredNimApiKey();
-  if (!apiKey) throw new Error("NVIDIA NIM ist nicht eingerichtet. Öffne die KI-Einstellungen und trage deinen API-Schlüssel ein.");
+async function requestOpenRouter(messages, includeTools) {
+  const apiKey = getStoredOpenRouterApiKey();
+  if (!apiKey) throw new Error("OpenRouter ist nicht eingerichtet. Öffne die KI-Einstellungen und trage deinen API-Schlüssel ein.");
   let response;
   try {
-    response = await fetch(NIM_API_URL, {
+    response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: nimSettings.model,
+        model: openRouterSettings.model,
         messages,
-        ...(includeTools ? { tools: NIM_TOOLS, tool_choice: "auto" } : {}),
-        temperature: nimSettings.temperature,
+        ...(includeTools ? { tools: OPENROUTER_TOOLS, tool_choice: "auto" } : {}),
+        temperature: openRouterSettings.temperature,
         max_tokens: 1200,
         stream: false,
       }),
@@ -911,9 +1203,9 @@ async function requestNim(messages, includeTools) {
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "TimeoutError") {
-      throw new Error("Die NVIDIA-Anfrage hat zu lange gedauert. Versuche es erneut.");
+      throw new Error("Die OpenRouter-Anfrage hat zu lange gedauert. Versuche es erneut.");
     }
-    throw new Error("NVIDIA NIM antwortet nicht im Browser. Die NVIDIA-API gibt für diese GitHub-Pages-Webseite keine CORS-Freigabe zurück. Für den Chat wird ein eigener Server-Proxy benötigt; den API-Schlüssel niemals in den Quellcode schreiben.");
+    throw new Error("OpenRouter antwortet nicht. Prüfe deine Internetverbindung und den API-Schlüssel.");
   }
 
   if (!response.ok) {
@@ -926,89 +1218,89 @@ async function requestNim(messages, includeTools) {
       detail = "";
     }
     if (response.status === 401 || response.status === 403) {
-      throw new Error("NVIDIA hat den API-Schlüssel abgelehnt. Prüfe den Schlüssel in den KI-Einstellungen.");
+      throw new Error("OpenRouter hat den API-Schlüssel abgelehnt. Prüfe den Schlüssel in den KI-Einstellungen.");
     }
     if (response.status === 404) {
-      throw new Error(`Das Modell „${nimSettings.model}“ wurde nicht gefunden. Prüfe die Modellkennung in den KI-Einstellungen.`);
+      throw new Error(`Das Modell „${openRouterSettings.model}“ wurde nicht gefunden. Prüfe die Modellkennung in den KI-Einstellungen.`);
     }
-    throw new Error(detail || `NVIDIA NIM antwortete mit HTTP ${response.status}.`);
+    throw new Error(detail || `OpenRouter antwortete mit HTTP ${response.status}.`);
   }
 
   const data = await response.json();
   const message = data?.choices?.[0]?.message;
   const hasToolCalls = Array.isArray(message?.tool_calls) && message.tool_calls.length > 0;
   if (!message || (!hasToolCalls && (typeof message.content !== "string" || !message.content.trim()))) {
-    throw new Error("NVIDIA NIM hat keine lesbare Antwort zurückgegeben.");
+    throw new Error("OpenRouter hat keine lesbare Antwort zurückgegeben.");
   }
   return message;
 }
 
-function saveNimSettings(event) {
+function saveOpenRouterSettings(event) {
   event.preventDefault();
-  const apiKey = nimApiKeyInput.value.trim();
-  const model = nimModelInput.value.trim();
+  const apiKey = openRouterApiKeyInput.value.trim();
+  const model = openRouterModelInput.value.trim();
   if (!apiKey) {
-    nimSettingsStatus.textContent = "Bitte einen NVIDIA API-Schlüssel eintragen.";
-    nimApiKeyInput.focus();
+    openRouterSettingsStatus.textContent = "Bitte einen OpenRouter API-Schlüssel eintragen.";
+    openRouterApiKeyInput.focus();
     return;
   }
   if (/[\r\n]/.test(apiKey)) {
-    nimSettingsStatus.textContent = "Der API-Schlüssel enthält ungültige Zeilenumbrüche.";
-    nimApiKeyInput.focus();
+    openRouterSettingsStatus.textContent = "Der API-Schlüssel enthält ungültige Zeilenumbrüche.";
+    openRouterApiKeyInput.focus();
     return;
   }
   if (!/^[\w./:-]{1,160}$/.test(model)) {
-    nimSettingsStatus.textContent = "Die Modellkennung darf nur Buchstaben, Zahlen und / . _ : - enthalten.";
-    nimModelInput.focus();
+    openRouterSettingsStatus.textContent = "Die Modellkennung darf nur Buchstaben, Zahlen und / . _ : - enthalten.";
+    openRouterModelInput.focus();
     return;
   }
 
   const nextSettings = {
     model,
-    temperature: Number(nimTemperatureInput.value),
-    rememberKey: nimRememberKeyInput.checked,
+    temperature: Number(openRouterTemperatureInput.value),
+    rememberKey: openRouterRememberKeyInput.checked,
   };
   try {
-    localStorage.setItem(NIM_SETTINGS_KEY, JSON.stringify(nextSettings));
-    if (nimRememberKeyInput.checked) {
-      localStorage.setItem(NIM_API_KEY_KEY, apiKey);
-      sessionStorage.removeItem(NIM_API_KEY_KEY);
+    localStorage.setItem(OPENROUTER_SETTINGS_KEY, JSON.stringify(nextSettings));
+    if (openRouterRememberKeyInput.checked) {
+      localStorage.setItem(OPENROUTER_API_KEY_KEY, apiKey);
+      sessionStorage.removeItem(OPENROUTER_API_KEY_KEY);
     } else {
-      sessionStorage.setItem(NIM_API_KEY_KEY, apiKey);
-      localStorage.removeItem(NIM_API_KEY_KEY);
+      sessionStorage.setItem(OPENROUTER_API_KEY_KEY, apiKey);
+      localStorage.removeItem(OPENROUTER_API_KEY_KEY);
     }
-    nimSettings = nextSettings;
-    nimSettingsDialog.close();
-    updateNimAssistantState();
+    openRouterSettings = nextSettings;
+    openRouterSettingsDialog.close();
+    updateOpenRouterAssistantState();
     showStatus("API-Schlüssel lokal gespeichert. Chat und Info-Check benötigen wegen CORS einen Server-Proxy.");
   } catch (error) {
     console.error("Die NVIDIA-Einstellungen konnten nicht gespeichert werden.", error);
-    nimSettingsStatus.textContent = "Speichern im Browser nicht möglich. Prüfe die Speichereinstellungen.";
+    openRouterSettingsStatus.textContent = "Speichern im Browser nicht möglich. Prüfe die Speichereinstellungen.";
   }
 }
 
-function clearNimApiKey() {
+function clearOpenRouterApiKey() {
   try {
-    localStorage.removeItem(NIM_API_KEY_KEY);
-    sessionStorage.removeItem(NIM_API_KEY_KEY);
-    nimApiKeyInput.value = "";
-    nimSettingsStatus.textContent = "API-Schlüssel entfernt.";
-    updateNimAssistantState();
+    localStorage.removeItem(OPENROUTER_API_KEY_KEY);
+    sessionStorage.removeItem(OPENROUTER_API_KEY_KEY);
+    openRouterApiKeyInput.value = "";
+    openRouterSettingsStatus.textContent = "API-Schlüssel entfernt.";
+    updateOpenRouterAssistantState();
   } catch (error) {
     console.error("Der NVIDIA API-Schlüssel konnte nicht entfernt werden.", error);
-    nimSettingsStatus.textContent = "Der Schlüssel konnte nicht entfernt werden.";
+    openRouterSettingsStatus.textContent = "Der Schlüssel konnte nicht entfernt werden.";
   }
 }
 
 function initializeAiAssistant() {
-  updateNimAssistantState();
-  if (!getStoredNimApiKey()) openNimSettings();
+  updateOpenRouterAssistantState();
+  if (!getStoredOpenRouterApiKey()) openOpenRouterSettings();
 }
 
 async function sendAiMessage(text) {
   if (!text || aiBusy) return;
-  if (!getStoredNimApiKey()) {
-    openNimSettings();
+  if (!getStoredOpenRouterApiKey()) {
+    openOpenRouterSettings();
     return;
   }
   aiBusy = true;
@@ -1034,7 +1326,7 @@ async function sendAiMessage(text) {
         { role: "system", content: systemPrompt },
         ...chatConversation,
       ];
-      const message = await requestNim(requestMessages, includeTools);
+      const message = await requestOpenRouter(requestMessages, includeTools);
       const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
       if (!toolCalls.length) {
         responseText = typeof message.content === "string" ? message.content.trim() : "";
@@ -1085,7 +1377,7 @@ async function sendAiMessage(text) {
     aiBusy = false;
     chatClearButton.disabled = false;
     chatQuickPrompts.forEach((button) => { button.disabled = false; });
-    updateNimAssistantState();
+    updateOpenRouterAssistantState();
     chatInput.focus();
   }
 }
@@ -1181,13 +1473,236 @@ async function runAssistantTool(name, args, toolsEnabled, additionsAllowed) {
     const results = data?.query?.search;
     if (!Array.isArray(results) || !results.length) return "Keine passenden Wikipedia-Artikel gefunden.";
     return results.map((item) => {
-      const summary = String(item.snippet || "").replace(/<[^>]*>/g, "").replace(/&quot;/g, "\"").replace(/&#039;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+      const summary = String(item.snippet || "").replace(/<[^>]*>/g, "").replace(/"/g, "\"").replace(/&#039;/g, "'").replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
       return `${item.title}: ${summary.slice(0, 280)}\nhttps://de.wikipedia.org/?curid=${encodeURIComponent(item.pageid)}`;
     }).join("\n\n").slice(0, 2200);
   }
+  if (name === "web_search") {
+    if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 200) {
+      throw new Error("Die Suchanfrage muss 1 bis 200 Zeichen lang sein.");
+    }
+    const maxResults = Math.min(10, Math.max(1, Number.isInteger(args.max_results) ? args.max_results : 5));
+    const url = new URL("https://api.duckduckgo.com/");
+    url.search = new URLSearchParams({
+      q: args.query.trim(),
+      format: "json",
+      no_html: "1",
+      skip_disambig: "1",
+    });
+    let response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    } catch {
+      throw new Error("Websuche ist derzeit nicht erreichbar.");
+    }
+    if (!response.ok) throw new Error(`Websuche antwortete mit HTTP ${response.status}.`);
+    const data = await response.json();
+    const results = [];
+    if (data.Abstract && data.AbstractText) {
+      results.push({ title: data.Heading || "Zusammenfassung", snippet: data.AbstractText, url: data.AbstractURL });
+    }
+    if (Array.isArray(data.RelatedTopics)) {
+      for (const topic of data.RelatedTopics) {
+        if (results.length >= maxResults) break;
+        if (topic.Text && topic.FirstURL) {
+          results.push({ title: topic.Text.split(" - ")[0] || "Verwandtes Thema", snippet: topic.Text, url: topic.FirstURL });
+        }
+      }
+    }
+    if (!results.length) return "Keine passenden Suchergebnisse gefunden.";
+    return results.map((item, i) => `${i + 1}. ${item.title}: ${item.snippet.slice(0, 300)}\n${item.url}`).join("\n\n").slice(0, 3000);
+  }
+  if (name === "fetch_webpage") {
+    if (typeof args.url !== "string" || !/^https?:\/\//i.test(args.url)) {
+      throw new Error("Bitte eine gültige URL angeben (http:// oder https://).");
+    }
+    const maxLength = Math.min(20000, Math.max(500, Number.isInteger(args.max_length) ? args.max_length : 8000));
+    const proxyUrl = `https://r.jina.ai/http://${args.url.replace(/^https?:\/\//, "")}`;
+    let response;
+    try {
+      response = await fetch(proxyUrl, { signal: AbortSignal.timeout(20000) });
+    } catch {
+      throw new Error("Die Webseite konnte nicht geladen werden (Timeout oder Netzwerkfehler).");
+    }
+    if (!response.ok) throw new Error(`Webseite antwortete mit HTTP ${response.status}.`);
+    const text = await response.text();
+    const cleaned = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return cleaned.slice(0, maxLength) || "Kein lesbarer Text auf der Seite gefunden.";
+  }
+  if (name === "search_images") {
+    if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 100) {
+      throw new Error("Der Suchbegriff muss 1 bis 100 Zeichen lang sein.");
+    }
+    const count = Math.min(10, Math.max(1, Number.isInteger(args.count) ? args.count : 4));
+    const orientation = ["landscape", "portrait", "squarish"].includes(args.orientation) ? args.orientation : "landscape";
+    const url = new URL("https://api.unsplash.com/search/photos");
+    url.search = new URLSearchParams({
+      query: args.query.trim(),
+      per_page: String(count),
+      orientation,
+      client_id: "demo",
+    });
+    let response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    } catch {
+      throw new Error("Bildsuche ist derzeit nicht erreichbar.");
+    }
+    if (!response.ok) {
+      if (response.status === 403) return "Unsplash Demo-Limit erreicht. Bitte später erneut versuchen oder eigenen API-Key nutzen.";
+      throw new Error(`Bildsuche antwortete mit HTTP ${response.status}.`);
+    }
+    const data = await response.json();
+    const results = data?.results;
+    if (!Array.isArray(results) || !results.length) return "Keine passenden Bilder gefunden.";
+    return results.map((img, i) => {
+      const urls = img.urls;
+      return `${i + 1}. ${img.alt_description || "Bild ohne Beschreibung"}\n   Direktlink: ${urls.regular}\n   Klein: ${urls.small}\n   Fotograf: ${img.user?.name || "Unbekannt"} (${img.user?.links?.html || "Unsplash"})`;
+    }).join("\n\n").slice(0, 3000);
+  }
+  if (name === "fact_check") {
+    if (typeof args.claim !== "string" || !args.claim.trim() || args.claim.length > 500) {
+      throw new Error("Die Behauptung muss 1 bis 500 Zeichen lang sein.");
+    }
+    const context = typeof args.context === "string" ? args.context.trim() : "";
+    const searchQuery = `fact check "${args.claim.trim()}" ${context}`.slice(0, 200);
+    const url = new URL("https://api.duckduckgo.com/");
+    url.search = new URLSearchParams({
+      q: searchQuery,
+      format: "json",
+      no_html: "1",
+      skip_disambig: "1",
+    });
+    let response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    } catch {
+      throw new Error("Faktencheck-Suche ist derzeit nicht erreichbar.");
+    }
+    if (!response.ok) throw new Error(`Faktencheck-Suche antwortete mit HTTP ${response.status}.`);
+    const data = await response.json();
+    const results = [];
+    if (data.Abstract && data.AbstractText) {
+      results.push({ title: data.Heading || "Faktencheck", snippet: data.AbstractText, url: data.AbstractURL });
+    }
+    if (Array.isArray(data.RelatedTopics)) {
+      for (const topic of data.RelatedTopics) {
+        if (results.length >= 3) break;
+        if (topic.Text && topic.FirstURL) {
+          results.push({ title: topic.Text.split(" - ")[0] || "Verwandt", snippet: topic.Text, url: topic.FirstURL });
+        }
+      }
+    }
+    let output = `Behauptung: "${args.claim.trim()}"\n\n`;
+    if (!results.length) {
+      output += "Keine direkten Faktencheck-Ergebnisse gefunden. Prüfe die Behauptung manuell bei vertrauenswürdigen Quellen (Wikipedia, Nachrichtenagenturen, Fachportale).";
+    } else {
+      output += "Gefundene Hinweise:\n\n";
+      output += results.map((item, i) => `${i + 1}. ${item.title}: ${item.snippet.slice(0, 350)}\n   Quelle: ${item.url}`).join("\n\n");
+      output += "\n\n⚠️ Dies ist eine automatische Recherche, kein abschließender Faktencheck. Verifiziere kritische Behauptungen immer selbst bei Primärquellen.";
+    }
+    return output.slice(0, 3000);
+  }
+  if (name === "generate_citation") {
+    const { source_type, style = "APA", title, authors = [], year, url, publisher, journal, volume, issue, pages, doi, accessed_date } = args;
+    if (!title || typeof title !== "string") throw new Error("Titel ist erforderlich.");
+    const accessDate = accessed_date || new Date().toISOString().split("T")[0];
+    const authorStr = authors.length ? authors.map((a, i) => i === authors.length - 1 && authors.length > 1 ? `& ${a}` : a).join(", ") : "Unbekannt";
+    let citation = "";
+    switch (style) {
+      case "APA":
+        if (source_type === "website") {
+          citation = `${authorStr} (${year || "o. J."}). ${title}. ${url ? `Abgerufen am ${accessDate} von ${url}` : ""}`;
+        } else if (source_type === "book") {
+          citation = `${authorStr} (${year || "o. J."}). ${title}. ${publisher || "Unbekannter Verlag"}.`;
+        } else if (source_type === "journal_article") {
+          citation = `${authorStr} (${year || "o. J."}). ${title}. ${journal || "Unbekanntes Journal"}, ${volume || ""}${issue ? `(${issue})` : ""}${pages ? `, ${pages}` : ""}.${doi ? ` https://doi.org/${doi}` : ""}`;
+        } else if (source_type === "video") {
+          citation = `${authorStr} (${year || "o. J."}). ${title} [Video]. ${url ? `Abgerufen am ${accessDate} von ${url}` : ""}`;
+        } else {
+          citation = `${authorStr} (${year || "o. J."}). ${title}.${url ? ` Abgerufen am ${accessDate} von ${url}` : ""}`;
+        }
+        break;
+      case "MLA":
+        if (source_type === "website") {
+          citation = `${authorStr}. "${title}." ${publisher || "Website"}, ${year || "o. J."}, ${url}. Accessed ${accessDate}.`;
+        } else if (source_type === "book") {
+          citation = `${authorStr}. ${title}. ${publisher || "Unbekannter Verlag"}, ${year || "o. J."}.`;
+        } else if (source_type === "journal_article") {
+          citation = `${authorStr}. "${title}." ${journal || "Journal"}, vol. ${volume || ""}, no. ${issue || ""}, ${year || "o. J."}, pp. ${pages || ""}.${doi ? ` DOI: ${doi}` : ""}`;
+        } else {
+          citation = `${authorStr}. "${title}." ${year || "o. J."}.${url ? ` ${url}. Accessed ${accessDate}.` : ""}`;
+        }
+        break;
+      case "Harvard":
+        if (source_type === "website") {
+          citation = `${authorStr} (${year || "o. J."}) ${title}. Available at: ${url} (Accessed: ${accessDate}).`;
+        } else if (source_type === "book") {
+          citation = `${authorStr} (${year || "o. J."}) ${title}. ${publisher || "Unbekannter Verlag"}.`;
+        } else if (source_type === "journal_article") {
+          citation = `${authorStr} (${year || "o. J."}) '${title}', ${journal || "Journal"}, ${volume || ""}${issue ? `(${issue})` : ""}, pp. ${pages || ""}.${doi ? ` DOI: ${doi}` : ""}`;
+        } else {
+          citation = `${authorStr} (${year || "o. J."}) ${title}.${url ? ` Available at: ${url} (Accessed: ${accessDate}).` : ""}`;
+        }
+        break;
+      case "IEEE":
+        const ieeeNum = "[1]";
+        if (source_type === "website") {
+          citation = `${ieeeNum} ${authorStr}, "${title}," ${year || "o. J."}. [Online]. Available: ${url}. [Accessed: ${accessDate}].`;
+        } else if (source_type === "book") {
+          citation = `${ieeeNum} ${authorStr}, ${title}. ${publisher || "Unbekannter Verlag"}, ${year || "o. J."}.`;
+        } else if (source_type === "journal_article") {
+          citation = `${ieeeNum} ${authorStr}, "${title}," ${journal || "Journal"}, vol. ${volume || ""}, no. ${issue || ""}, pp. ${pages || ""}, ${year || "o. J."}.${doi ? ` DOI: ${doi}` : ""}`;
+        } else {
+          citation = `${ieeeNum} ${authorStr}, "${title}," ${year || "o. J."}.${url ? ` [Online]. Available: ${url}.` : ""}`;
+        }
+        break;
+      case "Chicago":
+        if (source_type === "website") {
+          citation = `${authorStr}. "${title}." ${publisher || "Website"}, ${year || "o. J."}. ${url} (accessed ${accessDate}).`;
+        } else if (source_type === "book") {
+          citation = `${authorStr}. ${title}. ${publisher || "Unbekannter Verlag"}, ${year || "o. J."}.`;
+        } else if (source_type === "journal_article") {
+          citation = `${authorStr}. "${title}." ${journal || "Journal"} ${volume || ""}, no. ${issue || ""} (${year || "o. J."}): ${pages || ""}.${doi ? ` DOI: ${doi}` : ""}`;
+        } else {
+          citation = `${authorStr}. "${title}." ${year || "o. J."}.${url ? ` ${url} (accessed ${accessDate}).` : ""}`;
+        }
+        break;
+      default:
+        citation = `${authorStr} (${year || "o. J."}). ${title}.${url ? ` ${url}` : ""}`;
+    }
+    return `Zitation (${style}):\n${citation}`;
+  }
+  if (name === "translate_text") {
+    if (typeof args.text !== "string" || !args.text.trim() || args.text.length > 5000) {
+      throw new Error("Der Text muss 1 bis 5000 Zeichen lang sein.");
+    }
+    if (typeof args.target_lang !== "string" || !/^[a-z]{2}$/i.test(args.target_lang)) {
+      throw new Error("Zielsprache als ISO-639-1 Code angeben (z. B. de, en, fr, es).");
+    }
+    const sourceLang = (typeof args.source_lang === "string" && /^[a-z]{2}$/i.test(args.source_lang)) ? args.source_lang : "auto";
+    const targetLang = args.target_lang.toLowerCase();
+    const url = new URL("https://api.mymemory.translated.net/get");
+    url.search = new URLSearchParams({
+      q: args.text.trim(),
+      langpair: `${sourceLang}|${targetLang}`,
+    });
+    let response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    } catch {
+      throw new Error("Übersetzungsdienst ist derzeit nicht erreichbar.");
+    }
+    if (!response.ok) throw new Error(`Übersetzung antwortete mit HTTP ${response.status}.`);
+    const data = await response.json();
+    const translated = data?.responseData?.translatedText;
+    if (!translated || translated === args.text.trim()) {
+      return `Original: ${args.text.trim()}\n\nÜbersetzung (${sourceLang} → ${targetLang}): Keine Übersetzung verfügbar oder Text unverändert.`;
+    }
+    return `Original (${sourceLang}): ${args.text.trim()}\n\nÜbersetzung (${targetLang}): ${translated}`;
+  }
   throw new Error("Dieses Werkzeug ist nicht freigegeben.");
 }
-
 function getCurrentSlideTextFor(index) {
   const slide = slides[index];
   const templateText = slide.querySelector(".slide-content")?.textContent?.replace(/\s+/g, " ").trim() || "";
@@ -1264,26 +1779,26 @@ async function checkCurrentSlide() {
   const text = getCurrentSlideText();
   const warnings = getSourceReview(text);
   checkResults.replaceChildren();
-  if (getStoredNimApiKey()) {
-    checkResults.textContent = "NVIDIA NIM prüft Aussagen und Quellenhinweise …";
+  if (getStoredOpenRouterApiKey()) {
+    checkResults.textContent = "OpenRouter prüft Aussagen und Quellenhinweise …";
     try {
       const prompt = `Prüfe den folgenden Präsentationsfolientext auf überprüfbare Tatsachenbehauptungen, Zahlen, absolute Aussagen und fehlende Quellen. Du hast keinen Webzugriff: behaupte niemals, eine Aussage verifiziert zu haben. Liste konkrete Aussagen, die geprüft werden sollten, schlage passende Quellentypen vor und unterscheide klar zwischen Belegqualität und Wahrheit.\n\n${text || "(kein Text auf der Folie)"}`;
-      const response = await requestNim([
+      const response = await requestOpenRouter([
         { role: "system", content: "Du bist ein sorgfältiger Recherche-Coach. Du hast keinen Webzugriff und darfst keine Aussage als verifiziert darstellen. Antworte auf Deutsch und benenne Unsicherheiten ausdrücklich." },
         { role: "user", content: prompt },
       ], false);
       if (typeof response.content !== "string" || !response.content.trim()) {
-        throw new Error("NVIDIA NIM hat keine lesbare Antwort zurückgegeben.");
+        throw new Error("OpenRouter hat keine lesbare Antwort zurückgegeben.");
       }
       checkResults.replaceChildren();
       addCheckResult("NVIDIA Nemotron · kein Web-Faktencheck", response.content.trim());
     } catch (error) {
       console.error("Die NVIDIA-Informationsprüfung konnte nicht abgeschlossen werden.", error);
       checkResults.replaceChildren();
-      addCheckResult("NVIDIA NIM nicht verfügbar", error instanceof Error ? error.message : "Nutze die Hinweise zum Quellen-Check.");
+      addCheckResult("OpenRouter nicht verfügbar", error instanceof Error ? error.message : "Nutze die Hinweise zum Quellen-Check.");
     }
   } else {
-    addCheckResult("Quellen-Check · ohne KI", "Der KI-Check benötigt einen Server-Proxy für NVIDIA NIM. Ohne KI prüft das Ergebnis nur Quellenlücken und Formulierungen – nicht die Wahrheit der Aussagen.");
+    addCheckResult("Quellen-Check · ohne KI", "Der KI-Check benötigt OpenRouter. Ohne KI prüft das Ergebnis nur Quellenlücken und Formulierungen – nicht die Wahrheit der Aussagen.");
   }
   warnings.forEach((warning) => addCheckResult("Hinweis", warning));
 }
@@ -1342,7 +1857,7 @@ async function imageToDataUrl(file) {
 function exportProject() {
   try {
     const data = Object.keys(localStorage)
-      .filter((key) => key.startsWith(STORAGE_PREFIX) && !key.startsWith(`${STORAGE_PREFIX}nim:`))
+      .filter((key) => key.startsWith(STORAGE_PREFIX) && !key.startsWith(`${STORAGE_PREFIX}openrouter:`))
       .map((key) => ({ key, value: localStorage.getItem(key) }));
     const project = {
       app: "gfs-studio",
@@ -1695,7 +2210,7 @@ function validateProject(project) {
     if (!entry || typeof entry.key !== "string" || typeof entry.value !== "string") {
       throw new Error("Das Projekt enthält einen ungültigen Eintrag.");
     }
-    if (entry.key.startsWith(`${STORAGE_PREFIX}nim:`)) {
+    if (entry.key.startsWith(`${STORAGE_PREFIX}openrouter:`)) {
       throw new Error("NVIDIA-Zugangsdaten und KI-Einstellungen dürfen nicht aus Projektdateien importiert werden.");
     }
     const transitionMatch = entry.key.match(/^gfs-studio:transition:(\d+)$/);
@@ -2056,13 +2571,13 @@ nextButton.addEventListener("click", () => setSlide(activeIndex + 1));
 editButton.addEventListener("click", () => setEditing(!editing));
 elementsToggle.addEventListener("click", () => setElementPanelOpen(elementPanel.hidden));
 panelClose.addEventListener("click", () => setElementPanelOpen(false));
-nimSettingsToggle.addEventListener("click", openNimSettings);
-nimInlineSettings.addEventListener("click", openNimSettings);
-nimSettingsClose.addEventListener("click", () => nimSettingsDialog.close());
-nimSettingsForm.addEventListener("submit", saveNimSettings);
-nimClearKeyButton.addEventListener("click", clearNimApiKey);
-nimTemperatureInput.addEventListener("input", () => {
-  nimTemperatureValue.value = Number(nimTemperatureInput.value).toFixed(1);
+openRouterSettingsToggle.addEventListener("click", openOpenRouterSettings);
+openRouterInlineSettings.addEventListener("click", openOpenRouterSettings);
+openRouterSettingsClose.addEventListener("click", () => openRouterSettingsDialog.close());
+openRouterSettingsForm.addEventListener("submit", saveOpenRouterSettings);
+openRouterClearKeyButton.addEventListener("click", clearOpenRouterApiKey);
+openRouterTemperatureInput.addEventListener("input", () => {
+  openRouterTemperatureValue.value = Number(openRouterTemperatureInput.value).toFixed(1);
 });
 exportFormatButtons.forEach((button) => {
   button.addEventListener("click", () => exportPresentation(button.dataset.exportFormat));
@@ -2142,6 +2657,10 @@ addVideoButton.addEventListener("click", () => {
 addTextButton.addEventListener("click", () => addElement("text", { text: "Doppelklicken zum Bearbeiten", size: 3 }));
 addShapeButton.addEventListener("click", () => addElement("shape", { shape: "rectangle", height: 18 }));
 addImageButton.addEventListener("click", () => imageFileInput.click());
+addStickyButton.addEventListener("click", () => addElement("text", { text: "🗒 Notiz", size: 2.5, color: "#f5e6a0", background: "#2d2a1e", width: 28, family: "Georgia, serif" }));
+addArrowButton.addEventListener("click", () => addElement("shape", { shape: "line", height: 4, color: "#ef3828", width: 30 }));
+addIconButton.addEventListener("click", () => addElement("text", { text: "★", size: 5, color: "#ef3828", width: 12, align: "center" }));
+addChartButton.addEventListener("click", () => addElement("shape", { shape: "rectangle", height: 35, color: "#ef3828", width: 40, opacity: 0.3 }));
 imageFileInput.addEventListener("change", async () => {
   const [file] = imageFileInput.files;
   if (!file) return;
@@ -2179,7 +2698,7 @@ resetButton.addEventListener("click", () => {
     Object.keys(localStorage)
       .filter((key) => key.startsWith(STORAGE_PREFIX))
       .forEach((key) => localStorage.removeItem(key));
-    sessionStorage.removeItem(NIM_API_KEY_KEY);
+    sessionStorage.removeItem(OPENROUTER_API_KEY_KEY);
     location.reload();
   } catch (error) {
     console.error("Die Vorlage konnte nicht zurückgesetzt werden.", error);
@@ -2200,6 +2719,143 @@ rotateButton.addEventListener("click", () => {
   rotateButton.setAttribute("aria-pressed", String(shouldRotate));
   rotateState.textContent = shouldRotate ? "AN" : "AUS";
 });
+
+// Roadmap Builder
+let roadmapElements = [];
+let selectedRoadmapElement = null;
+
+function renderRoadmap() {
+  if (!roadmapCanvas) return;
+  roadmapCanvas.innerHTML = "";
+  roadmapElements.forEach((element, index) => {
+    const node = document.createElement("div");
+    node.className = `roadmap-element roadmap-element-${element.type}${element.id === selectedRoadmapElement ? " is-selected" : ""}`;
+    node.dataset.elementId = element.id;
+    node.style.left = `${element.x}%`;
+    node.style.top = `${element.y}%`;
+    node.style.width = `${element.width}%`;
+    node.style.height = `${element.height}%`;
+    node.style.background = element.color;
+    node.innerHTML = `<span class="roadmap-element-title">${element.title}</span><span class="roadmap-element-date">${element.date || ""}</span>`;
+    node.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectRoadmapElement(element.id);
+    });
+    node.addEventListener("pointerdown", (e) => startRoadmapDrag(e, element));
+    roadmapCanvas.append(node);
+  });
+}
+
+function selectRoadmapElement(id) {
+  selectedRoadmapElement = id;
+  roadmapCanvas.querySelectorAll(".roadmap-element").forEach((node) => {
+    node.classList.toggle("is-selected", node.dataset.elementId === id);
+  });
+  const element = roadmapElements.find((e) => e.id === id);
+  if (element && roadmapProperties) {
+    roadmapProperties.hidden = false;
+    roadmapElementTitle.value = element.title;
+    roadmapElementDate.value = element.date || "";
+    roadmapElementStatus.value = element.status || "planned";
+    roadmapElementColor.value = element.color;
+  }
+}
+
+function addRoadmapElement(type) {
+  const id = crypto.randomUUID();
+  const element = {
+    id,
+    type,
+    title: type === "phase" ? "Neue Phase" : "Meilenstein",
+    date: "",
+    status: "planned",
+    color: "#ef3828",
+    x: 10 + (roadmapElements.length % 5) * 18,
+    y: 10 + Math.floor(roadmapElements.length / 5) * 20,
+    width: type === "phase" ? 35 : 20,
+    height: type === "phase" ? 25 : 15,
+  };
+  roadmapElements.push(element);
+  renderRoadmap();
+  selectRoadmapElement(id);
+}
+
+function updateRoadmapElement(updates) {
+  const index = roadmapElements.findIndex((e) => e.id === selectedRoadmapElement);
+  if (index >= 0) {
+    roadmapElements[index] = { ...roadmapElements[index], ...updates };
+    renderRoadmap();
+  }
+}
+
+function deleteRoadmapElement() {
+  roadmapElements = roadmapElements.filter((e) => e.id !== selectedRoadmapElement);
+  selectedRoadmapElement = null;
+  if (roadmapProperties) roadmapProperties.hidden = true;
+  renderRoadmap();
+}
+
+function startRoadmapDrag(event, element) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const pointerId = event.pointerId;
+  const bounds = roadmapCanvas.getBoundingClientRect();
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const originX = element.x;
+  const originY = element.y;
+  const move = (moveEvent) => {
+    if (moveEvent.pointerId !== pointerId) return;
+    element.x = Math.min(95, Math.max(0, originX + ((moveEvent.clientX - startX) / bounds.width) * 100));
+    element.y = Math.min(90, Math.max(0, originY + ((moveEvent.clientY - startY) / bounds.height) * 100));
+    renderRoadmap();
+  };
+  const finish = (finishEvent) => {
+    if (finishEvent.pointerId !== pointerId) return;
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", finish);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", finish, { once: true });
+  window.addEventListener("pointercancel", finish, { once: true });
+}
+
+function applyRoadmapToSlide() {
+  if (roadmapElements.length === 0) {
+    showStatus("Keine Roadmap-Elemente zum Einfügen.");
+    return;
+  }
+  addSlideFromLayout("roadmap");
+  // The roadmap layout will be created, then we add the elements
+  setTimeout(() => {
+    const slideIndex = activeIndex;
+    const items = roadmapElements.map((el) => ({
+      id: crypto.randomUUID(),
+      type: "text",
+      text: `${el.title}${el.date ? ` (${el.date})` : ""}`,
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      size: 2.5,
+      color: el.color,
+      bold: true,
+    }));
+    localStorage.setItem(`${STORAGE_PREFIX}elements:${slideIndex}`, JSON.stringify(items));
+    renderSlideElements(slideIndex);
+    showStatus("Roadmap als Folie eingefügt.");
+  }, 100);
+}
+
+if (roadmapAddPhase) roadmapAddPhase.addEventListener("click", () => addRoadmapElement("phase"));
+if (roadmapAddMilestone) roadmapAddMilestone.addEventListener("click", () => addRoadmapElement("milestone"));
+if (roadmapAddDependency) roadmapAddDependency.addEventListener("click", () => addRoadmapElement("dependency"));
+if (roadmapElementTitle) roadmapElementTitle.addEventListener("input", () => updateRoadmapElement({ title: roadmapElementTitle.value }));
+if (roadmapElementDate) roadmapElementDate.addEventListener("input", () => updateRoadmapElement({ date: roadmapElementDate.value }));
+if (roadmapElementStatus) roadmapElementStatus.addEventListener("change", () => updateRoadmapElement({ status: roadmapElementStatus.value }));
+if (roadmapElementColor) roadmapElementColor.addEventListener("input", () => updateRoadmapElement({ color: roadmapElementColor.value }));
+if (roadmapDeleteElement) roadmapDeleteElement.addEventListener("click", deleteRoadmapElement);
+if (roadmapApply) roadmapApply.addEventListener("click", applyRoadmapToSlide);
 resetCameraButton.addEventListener("click", () => {
   modelViewer.cameraOrbit = "0deg 75deg auto";
   modelViewer.cameraTarget = "auto";

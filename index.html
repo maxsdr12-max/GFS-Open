@@ -66,11 +66,12 @@
             <button class="assistant-tab is-active" id="assistant-chat-tab" type="button" role="tab" aria-selected="true" aria-controls="assistant-chat-view">KI-CHAT</button>
             <button class="assistant-tab" id="assistant-check-tab" type="button" role="tab" aria-selected="false" aria-controls="assistant-check-view">INFO-CHECK</button>
             <button class="assistant-tab" id="assistant-layouts-tab" type="button" role="tab" aria-selected="false" aria-controls="assistant-layouts-view">FOLIEN</button>
+            <button class="assistant-tab" id="assistant-roadmap-tab" type="button" role="tab" aria-selected="false" aria-controls="assistant-roadmap-view">ROADMAP</button>
           </div>
           <section class="assistant-view" id="assistant-chat-view" role="tabpanel" aria-labelledby="assistant-chat-tab">
-            <p class="panel-kicker">NVIDIA NIM · NEMOTRON ULTRA</p>
+            <p class="panel-kicker">KI-ASSISTENT · OPENROUTER</p>
             <h2 class="assistant-title">Ideen sortieren.<br />Klarer präsentieren.</h2>
-            <div class="ai-capability-note" id="ai-capability-note">Prüfe NVIDIA-NIM-Einstellungen.</div>
+            <div class="ai-capability-note" id="ai-capability-note">Wähle einen Anbieter in den KI-Einstellungen.</div>
             <div class="chat-toolbar">
               <span class="chat-context" id="chat-context">KONTEXT · AKTUELLE FOLIE</span>
               <button class="chat-clear-button" id="chat-clear-button" type="button">Neuer Chat</button>
@@ -92,8 +93,8 @@
               <textarea id="chat-input" rows="2" maxlength="2000" placeholder="Nachricht eingeben · Enter sendet, Shift+Enter fügt eine Zeile ein." disabled></textarea>
               <button id="chat-send" type="submit" disabled aria-label="Nachricht senden">↑</button>
             </form>
-            <button class="nim-inline-settings" id="nim-inline-settings" type="button">NVIDIA NIM einrichten oder ändern</button>
-            <p class="ai-privacy-note">NVIDIA NIM benötigt wegen CORS einen Server-Proxy. Bei aktivierten Werkzeugen wird eine Wikipedia-Suche direkt an Wikimedia gesendet.</p>
+            <button class="nim-inline-settings" id="nim-inline-settings" type="button">KI-Einstellungen öffnen</button>
+            <p class="ai-privacy-note">OpenRouter funktioniert direkt im Browser (CORS-freundlich). Bei aktivierten Werkzeugen wird eine Wikipedia-Suche direkt an Wikimedia gesendet.</p>
           </section>
           <section class="assistant-view" id="assistant-check-view" role="tabpanel" aria-labelledby="assistant-check-tab" hidden>
             <p class="panel-kicker">QUELLEN UND AUSSAGEN</p>
@@ -110,6 +111,46 @@
             <p class="layout-intro">Füge nur das Layout ein, das du gerade brauchst. Alle Titel und Texte sind einzeln verschiebbar und formatierbar.</p>
             <div class="layout-gallery" id="layout-gallery"></div>
             <button class="delete-slide-button" id="delete-slide-button" type="button" disabled>Diese Zusatzfolie löschen</button>
+          </section>
+          <section class="assistant-view" id="assistant-roadmap-view" role="tabpanel" aria-labelledby="assistant-roadmap-tab" hidden>
+            <p class="panel-kicker">STRATEGISCHE PLANUNG</p>
+            <h2 class="assistant-title">Roadmap-Builder</h2>
+            <p class="layout-intro">Erstelle professionelle Roadmaps mit Phasen, Meilensteinen und Abhängigkeiten. Alles per Drag & Drop anpassbar.</p>
+            <div class="roadmap-builder">
+              <div class="roadmap-toolbar">
+                <button class="roadmap-action" id="roadmap-add-phase" type="button"><span>＋</span> Phase</button>
+                <button class="roadmap-action" id="roadmap-add-milestone" type="button"><span>◆</span> Meilenstein</button>
+                <button class="roadmap-action" id="roadmap-add-dependency" type="button"><span>⇄</span> Abhängigkeit</button>
+              </div>
+              <div class="roadmap-canvas" id="roadmap-canvas"></div>
+              <div class="roadmap-properties" id="roadmap-properties" hidden>
+                <div class="panel-divider"></div>
+                <p class="panel-section-label">AUSGEWÄHLTES ELEMENT</p>
+                <label class="property-row">
+                  <span>Titel</span>
+                  <input id="roadmap-element-title" type="text" placeholder="Titel eingeben" />
+                </label>
+                <label class="property-row">
+                  <span>Zeitraum</span>
+                  <input id="roadmap-element-date" type="text" placeholder="z.B. Q1 2024" />
+                </label>
+                <label class="property-row">
+                  <span>Status</span>
+                  <select id="roadmap-element-status">
+                    <option value="planned">Geplant</option>
+                    <option value="in-progress">In Arbeit</option>
+                    <option value="done">Erledigt</option>
+                    <option value="blocked">Blockiert</option>
+                  </select>
+                </label>
+                <label class="property-row">
+                  <span>Farbe</span>
+                  <input id="roadmap-element-color" type="color" value="#ef3828" />
+                </label>
+                <button class="roadmap-action roadmap-delete" id="roadmap-delete-element" type="button">Element löschen</button>
+              </div>
+            </div>
+            <button class="roadmap-apply" id="roadmap-apply" type="button">Als Folie einfügen</button>
           </section>
         </aside>
         <div class="stage" id="stage" data-template="editorial">
@@ -355,6 +396,10 @@
             <button class="element-action" id="add-shape-button" type="button"><span>＋</span> Form</button>
             <button class="element-action" id="add-image-button" type="button"><span>＋</span> Bild</button>
             <button class="element-action element-action-video" id="add-video-button" type="button"><span>▶</span> Video-Link</button>
+            <button class="element-action" id="add-sticky-button" type="button"><span>🗒</span> Notizzettel</button>
+            <button class="element-action" id="add-arrow-button" type="button"><span>➤</span> Pfeil</button>
+            <button class="element-action" id="add-icon-button" type="button"><span>★</span> Icon</button>
+            <button class="element-action" id="add-chart-button" type="button"><span>📊</span> Diagramm</button>
             <input id="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
           </div>
           <div class="panel-divider"></div>
@@ -472,20 +517,20 @@
         <form class="nim-settings-form" id="nim-settings-form">
           <div class="nim-settings-heading">
             <div>
-              <p class="panel-kicker">NVIDIA NIM · API-KONFIGURATION</p>
+              <p class="panel-kicker">OPENROUTER · API-KONFIGURATION</p>
               <h2 id="nim-settings-title">KI-Einstellungen</h2>
             </div>
             <button class="panel-close" id="nim-settings-close" type="button" aria-label="Einstellungen schließen">×</button>
           </div>
-          <p class="nim-settings-intro">Wichtig: NVIDIA blockiert direkte API-Aufrufe aus dieser GitHub-Pages-Webseite per CORS. Chat und Info-Check funktionieren erst mit einem eigenen Server-Proxy. Der Schlüssel bleibt lokal im Browser und wird nicht in Projektdateien exportiert.</p>
+          <p class="nim-settings-intro">OpenRouter funktioniert direkt im Browser (CORS-freundlich). Der Schlüssel bleibt lokal im Browser und wird nicht in Projektdateien exportiert.</p>
           <label class="nim-field">
-            <span>NVIDIA API-Schlüssel</span>
-            <input id="nim-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="nvapi-…" />
+            <span>OpenRouter API-Schlüssel</span>
+            <input id="nim-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" />
           </label>
           <label class="nim-field">
             <span>Modell</span>
-            <input id="nim-model" type="text" value="nvidia/nemotron-3-ultra-550b-a55b" autocomplete="off" spellcheck="false" />
-            <small>Standard: NVIDIA Nemotron 3 Ultra · 550B A55B</small>
+            <input id="nim-model" type="text" value="google/gemma-2-9b-it:free" autocomplete="off" spellcheck="false" />
+            <small>Standard: Google Gemma 2 9B IT (kostenlos) · Mehr Modelle auf openrouter.ai/models</small>
           </label>
           <label class="nim-field nim-temperature-field">
             <span>Antwortstil <output id="nim-temperature-value" for="nim-temperature">0.4</output></span>
@@ -495,7 +540,7 @@
             <input id="nim-remember-key" type="checkbox" checked />
             <span>API-Schlüssel auf diesem Gerät merken <small>Deaktivieren für Sitzungsspeicherung. Auf gemeinsam genutzten Geräten nicht aktivieren.</small></span>
           </label>
-          <div class="nim-security-note">Der Schlüssel wird lokal im Browser gespeichert. Für einen Server-Proxy muss er als geheimes Server-Secret eingerichtet werden – niemals in den Quellcode oder ein öffentliches GitHub-Repository schreiben.</div>
+          <div class="nim-security-note">Der Schlüssel wird lokal im Browser gespeichert. Niemals in den Quellcode oder ein öffentliches GitHub-Repository schreiben.</div>
           <div class="nim-settings-actions">
             <button class="project-button project-button-secondary" id="nim-clear-key" type="button">Schlüssel entfernen</button>
             <button class="present-button" id="nim-save-settings" type="submit">Einstellungen speichern</button>
