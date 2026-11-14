@@ -111,6 +111,7 @@
             <p class="layout-intro">Füge nur das Layout ein, das du gerade brauchst. Alle Titel und Texte sind einzeln verschiebbar und formatierbar.</p>
             <div class="layout-gallery" id="layout-gallery"></div>
             <button class="delete-slide-button" id="delete-slide-button" type="button" disabled>Diese Zusatzfolie löschen</button>
+            <button class="delete-slide-button" id="duplicate-slide-button" type="button" disabled>Folie duplizieren</button>
           </section>
           <section class="assistant-view" id="assistant-roadmap-view" role="tabpanel" aria-labelledby="assistant-roadmap-tab" hidden>
             <p class="panel-kicker">STRATEGISCHE PLANUNG</p>
@@ -403,9 +404,28 @@
             <input id="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
           </div>
           <div class="panel-divider"></div>
-          <p class="panel-section-label">AUF DIESER FOLIE</p>
+          <div class="element-toolbar">
+            <p class="panel-section-label">AUF DIESER FOLIE</p>
+            <div class="element-toolbar-actions">
+              <button class="element-toolbar-btn" id="group-elements-btn" type="button" title="Elemente gruppieren" disabled>⊞ Gruppe</button>
+              <button class="element-toolbar-btn" id="ungroup-elements-btn" type="button" title="Gruppe auflösen" disabled>⊟ Auftrennen</button>
+              <button class="element-toolbar-btn" id="align-left-btn" type="button" title="Links ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="align-center-btn" type="button" title="Horizontal zentrieren" disabled>⬜</button>
+              <button class="element-toolbar-btn" id="align-right-btn" type="button" title="Rechts ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="align-top-btn" type="button" title="Oben ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="align-middle-btn" type="button" title="Vertikal zentrieren" disabled>⬜</button>
+              <button class="element-toolbar-btn" id="align-bottom-btn" type="button" title="Unten ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="distribute-h-btn" type="button" title="Horizontal verteilen" disabled>⋮</button>
+              <button class="element-toolbar-btn" id="distribute-v-btn" type="button" title="Vertikal verteilen" disabled>⋮</button>
+            </div>
+          </div>
           <div class="element-list" id="element-list">
             <p class="empty-element-list">Noch keine eigenen Elemente.</p>
+          </div>
+          <div class="layer-panel" id="layer-panel" hidden>
+            <div class="panel-divider"></div>
+            <p class="panel-section-label">EBENEN</p>
+            <div class="layer-list" id="layer-list"></div>
           </div>
           <div class="element-properties" id="element-properties" hidden>
             <div class="panel-divider"></div>

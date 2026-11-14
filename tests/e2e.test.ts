@@ -2,9 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('GFS Presentation Editor', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
     // Set a dummy API key to prevent auto-opening settings dialog
-    await page.evaluate(() => {
+    await page.addInitScript(() => {
       localStorage.setItem('gfs-studio:openrouter:api-key', 'sk-or-v1-test-key');
       localStorage.setItem('gfs-studio:openrouter:settings', JSON.stringify({
         model: 'google/gemma-2-9b-it:free',
@@ -12,7 +11,7 @@ test.describe('GFS Presentation Editor', () => {
         rememberKey: true
       }));
     });
-    await page.reload();
+    await page.goto('/');
     await page.waitForLoadState('networkidle');
   });
 

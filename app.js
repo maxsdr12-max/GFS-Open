@@ -1,7 +1,174 @@
 const STORAGE_PREFIX = "gfs-studio:";
 const TEMPLATE_STORAGE_KEY = `${STORAGE_PREFIX}template`;
-const TRANSITION_STORAGE_PREFIX = `${STORAGE_PREFIX}transition:`;
+const TRANSITION_STORAGE_KEY = `${STORAGE_PREFIX}transition:`;
 const DYNAMIC_SLIDES_KEY = `${STORAGE_PREFIX}slides`;
+
+// Undo/Redo System
+const MAX_HISTORY_SIZE = 100;
+let undoStack = [];
+let redoStack = [];
+let isUndoRedoOperation = false;
+
+function pushToUndoStack(command) {
+  if (isUndoRedoOperation) return;
+  undoStack.push(command);
+  if (undoStack.length > MAX_HISTORY_SIZE) undoStack.shift();
+  redoStack = []; // Clear redo stack on new action
+}
+
+function undo() {
+  if (undoStack.length === 0) return false;
+  isUndoRedoOperation = true;
+  const command = undoStack.pop();
+  command.undo();
+  redoStack.push(command);
+  isUndoRedoOperation = false;
+  return true;
+}
+
+function redo() {
+  if (redoStack.length === 0) return false;
+  isUndoRedoOperation = true;
+  const command = redoStack.pop();
+  command.redo();
+  undoStack.push(command);
+  isUndoRedoOperation = false;
+  return true;
+}
+
+function clearHistory() {
+  undoStack = [];
+  redoStack = [];
+}
+
+// Command classes for different operations
+class ElementCommand {
+  constructor(index, previousElements, newElements) {
+    this.index = index;
+    this.previousElements = JSON.parse(JSON.stringify(previousElements));
+    this.newElements = JSON.parse(JSON.stringify(newElements));
+  }
+  undo() {
+    localStorage.setItem(`${STORAGE_PREFIX}elements:${this.index}`, JSON.stringify(this.previousElements));
+    renderSlideElements(this.index);
+    if (this.index === activeIndex) renderElementList();
+  }
+  redo() {
+    localStorage.setItem(`${STORAGE_PREFIX}elements:${this.index}`, JSON.stringify(this.newElements));
+    renderSlideElements(this.index);
+    if (this.index === activeIndex) renderElementList();
+  }
+}
+
+class SlideCommand {
+  constructor(type, data) {
+    this.type = type; // 'add', 'delete', 'reorder', 'duplicate'
+    this.data = data;
+  }
+  undo() {
+    switch (this.type) {
+      case 'add':
+        deleteSlide(this.data.index);
+        break;
+      case 'delete':
+        restoreSlide(this.data);
+        break;
+      case 'reorder':
+        reorderSlides(this.data.toIndex, this.data.fromIndex);
+        break;
+      case 'duplicate':
+        deleteSlide(this.data.index);
+        break;
+    }
+  }
+  redo() {
+    switch (this.type) {
+      case 'add':
+        addSlideFromLayout(this.data.layoutId);
+        break;
+      case 'delete':
+        deleteSlide(this.data.index);
+        break;
+      case 'reorder':
+        reorderSlides(this.data.fromIndex, this.data.toIndex);
+        break;
+      case 'duplicate':
+        duplicateSlide(this.data.index);
+        break;
+    }
+  }
+}
+
+class SettingsCommand {
+  constructor(previousSettings, newSettings) {
+    this.previousSettings = previousSettings;
+    this.newSettings = newSettings;
+  }
+  undo() {
+    openRouterSettings = this.previousSettings;
+    localStorage.setItem(OPENROUTER_SETTINGS_KEY, JSON.stringify(this.previousSettings));
+    updateOpenRouterAssistantState();
+  }
+  redo() {
+    openRouterSettings = this.newSettings;
+    localStorage.setItem(OPENROUTER_SETTINGS_KEY, JSON.stringify(this.newSettings));
+    updateOpenRouterAssistantState();
+  }
+}
+
+class ElementPropertyCommand {
+  constructor(index, elementId, previousProps, newProps) {
+    this.index = index;
+    this.elementId = elementId;
+    this.previousProps = previousProps;
+    this.newProps = newProps;
+  }
+  undo() {
+    const elements = getSlideElements(this.index);
+    const element = elements.find(e => e.id === this.elementId);
+    if (element) Object.assign(element, this.previousProps);
+    saveSlideElements(this.index, elements);
+    renderSlideElements(this.index);
+    if (this.index === activeIndex) renderElementList();
+  }
+  redo() {
+    const elements = getSlideElements(this.index);
+    const element = elements.find(e => e.id === this.elementId);
+    if (element) Object.assign(element, this.newProps);
+    saveSlideElements(this.index, elements);
+    renderSlideElements(this.index);
+    if (this.index === activeIndex) renderElementList();
+  }
+}
+
+// Helper functions for undo/redo
+function recordElementChange(index, previousElements, newElements) {
+  pushToUndoStack(new ElementCommand(index, previousElements, newElements));
+}
+
+function recordSlideChange(type, data) {
+  pushToUndoStack(new SlideCommand(type, data));
+}
+
+function recordSettingsChange(previousSettings, newSettings) {
+  pushToUndoStack(new SettingsCommand(previousSettings, newSettings));
+}
+
+function recordElementPropertyChange(index, elementId, previousProps, newProps) {
+  pushToUndoStack(new ElementPropertyCommand(index, elementId, previousProps, newProps));
+}
+
+// Keyboard shortcuts for undo/redo
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "z" && !event.shiftKey) {
+    event.preventDefault();
+    if (undo()) showStatus("Rückgängig");
+  }
+  if ((event.ctrlKey || event.metaKey) && (event.key === "y" || (event.key === "z" && event.shiftKey))) {
+    event.preventDefault();
+    if (redo()) showStatus("Wiederherstellen");
+  }
+});
 
 const stage = document.querySelector("#stage");
 const slides = Array.from(document.querySelectorAll("[data-slide]"));
@@ -59,6 +226,18 @@ const panelClose = document.querySelector("#panel-close");
 const panelSlideNumber = document.querySelector("#panel-slide-number");
 const elementList = document.querySelector("#element-list");
 const elementProperties = document.querySelector("#element-properties");
+const layerPanel = document.querySelector("#layer-panel");
+const layerList = document.querySelector("#layer-list");
+const groupElementsBtn = document.querySelector("#group-elements-btn");
+const ungroupElementsBtn = document.querySelector("#ungroup-elements-btn");
+const alignLeftBtn = document.querySelector("#align-left-btn");
+const alignCenterBtn = document.querySelector("#align-center-btn");
+const alignRightBtn = document.querySelector("#align-right-btn");
+const alignTopBtn = document.querySelector("#align-top-btn");
+const alignMiddleBtn = document.querySelector("#align-middle-btn");
+const alignBottomBtn = document.querySelector("#align-bottom-btn");
+const distributeHBtn = document.querySelector("#distribute-h-btn");
+const distributeVBtn = document.querySelector("#distribute-v-btn");
 const elementColor = document.querySelector("#element-color");
 const elementShapeType = document.querySelector("#element-shape-type");
 const shapeTypeRow = document.querySelector("#shape-type-row");
@@ -117,6 +296,7 @@ const checkSlideButton = document.querySelector("#check-slide-button");
 const checkResults = document.querySelector("#check-results");
 const layoutGallery = document.querySelector("#layout-gallery");
 const deleteSlideButton = document.querySelector("#delete-slide-button");
+const duplicateSlideButton = document.querySelector("#duplicate-slide-button");
 const openRouterSettingsDialog = document.querySelector("#nim-settings-dialog");
 const openRouterSettingsForm = document.querySelector("#nim-settings-form");
 const openRouterSettingsToggle = document.querySelector("#nim-settings-toggle");
@@ -399,10 +579,15 @@ function isValidElement(element) {
 }
 
 function saveSlideElements(index, elements = getSlideElements(index)) {
+  const previousElements = getSlideElements(index);
   try {
     localStorage.setItem(`${STORAGE_PREFIX}elements:${index}`, JSON.stringify(elements));
     saveIndicator.textContent = "Automatisch gespeichert";
     saveIndicator.dataset.state = "saved";
+    // Record for undo/redo
+    if (!isUndoRedoOperation && JSON.stringify(previousElements) !== JSON.stringify(elements)) {
+      recordElementChange(index, previousElements, elements);
+    }
     return true;
   } catch (error) {
     console.error(`Elemente für Folie ${index + 1} konnten nicht gespeichert werden.`, error);
@@ -609,6 +794,9 @@ function renderElementList() {
     });
   }
 
+  // Render layer panel
+  renderLayerPanel(elements);
+
   const selected = elements.find((item) => item.id === selectedElementId);
   elementProperties.hidden = !selected;
   if (selected) {
@@ -627,6 +815,196 @@ function renderElementList() {
       elementBoldButton.setAttribute("aria-pressed", String(Boolean(selected.bold)));
     }
   }
+  
+  // Update toolbar button states
+  updateElementToolbarState(elements);
+}
+
+function renderLayerPanel(elements) {
+  if (!layerPanel || !layerList) return;
+  
+  if (elements.length === 0) {
+    layerPanel.hidden = true;
+    return;
+  }
+  
+  layerPanel.hidden = false;
+  layerList.replaceChildren();
+  
+  // Render in reverse order (top layer first)
+  [...elements].reverse().forEach((item, reverseIndex) => {
+    const layerItem = document.createElement("div");
+    layerItem.className = `layer-item${item.id === selectedElementId ? " is-selected" : ""}`;
+    layerItem.dataset.elementId = item.id;
+    layerItem.style.display = "flex";
+    layerItem.style.alignItems = "center";
+    layerItem.style.gap = "8px";
+    layerItem.style.padding = "6px 8px";
+    layerItem.style.borderRadius = "4px";
+    layerItem.style.cursor = "pointer";
+    layerItem.style.background = item.id === selectedElementId ? "rgba(239, 56, 40, 0.1)" : "transparent";
+    layerItem.style.transition = "background 120ms ease";
+    
+    // Drag handle
+    const dragHandle = document.createElement("span");
+    dragHandle.textContent = "⋮⋮";
+    dragHandle.style.color = "#888";
+    dragHandle.style.cursor = "grab";
+    dragHandle.style.userSelect = "none";
+    
+    // Visibility toggle
+    const visibilityBtn = document.createElement("button");
+    visibilityBtn.type = "button";
+    visibilityBtn.textContent = item.hidden ? "🙈" : "👁";
+    visibilityBtn.style.background = "none";
+    visibilityBtn.style.border = "none";
+    visibilityBtn.style.cursor = "pointer";
+    visibilityBtn.style.fontSize = "14px";
+    visibilityBtn.style.padding = "2px";
+    visibilityBtn.title = item.hidden ? "Einblenden" : "Ausblenden";
+    visibilityBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      item.hidden = !item.hidden;
+      saveSlideElements(activeIndex, elements);
+      renderSlideElements(activeIndex);
+      renderLayerPanel(getSlideElements(activeIndex));
+    });
+    
+    // Lock toggle
+    const lockBtn = document.createElement("button");
+    lockBtn.type = "button";
+    lockBtn.textContent = item.locked ? "🔒" : "🔓";
+    lockBtn.style.background = "none";
+    lockBtn.style.border = "none";
+    lockBtn.style.cursor = "pointer";
+    lockBtn.style.fontSize = "14px";
+    lockBtn.style.padding = "2px";
+    lockBtn.title = item.locked ? "Entsperren" : "Sperren";
+    lockBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      item.locked = !item.locked;
+      saveSlideElements(activeIndex, elements);
+      renderLayerPanel(getSlideElements(activeIndex));
+    });
+    
+    // Element type icon
+    const typeIcon = document.createElement("span");
+    const typeIcons = { text: "𝌃", shape: "▢", image: "🖼", video: "🎬" };
+    typeIcon.textContent = typeIcons[item.type] || "?";
+    typeIcon.style.fontSize = "14px";
+    typeIcon.style.width = "20px";
+    typeIcon.style.textAlign = "center";
+    
+    // Element name
+    const name = document.createElement("span");
+    name.textContent = item.type === "text" ? (item.text.slice(0, 20) || "Text") : 
+                       item.type === "shape" ? "Form" : 
+                       item.type === "video" ? "Video" : item.alt || "Bild";
+    name.style.flex = "1";
+    name.style.whiteSpace = "nowrap";
+    name.style.overflow = "hidden";
+    name.style.textOverflow = "ellipsis";
+    name.style.fontSize = "12px";
+    
+    // Z-index indicator
+    const zIndex = document.createElement("span");
+    zIndex.textContent = String(elements.length - reverseIndex);
+    zIndex.style.fontSize = "10px";
+    zIndex.style.color = "#888";
+    zIndex.style.width = "20px";
+    zIndex.style.textAlign = "right";
+    
+    layerItem.append(dragHandle, visibilityBtn, lockBtn, typeIcon, name, zIndex);
+    layerItem.addEventListener("click", () => selectElement(item.id));
+    
+    // Drag and drop for reordering layers
+    layerItem.draggable = true;
+    layerItem.addEventListener("dragstart", handleLayerDragStart);
+    layerItem.addEventListener("dragover", handleLayerDragOver);
+    layerItem.addEventListener("drop", handleLayerDrop);
+    layerItem.addEventListener("dragend", handleLayerDragEnd);
+    
+    layerList.append(layerItem);
+  });
+}
+
+let draggedLayerItem = null;
+
+function handleLayerDragStart(event) {
+  draggedLayerItem = event.currentTarget;
+  event.currentTarget.classList.add("is-dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", event.currentTarget.dataset.elementId);
+}
+
+function handleLayerDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  const target = event.currentTarget;
+  if (target === draggedLayerItem) return;
+  
+  const rect = target.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  target.classList.toggle("drag-over-before", event.clientY < midY);
+  target.classList.toggle("drag-over-after", event.clientY >= midY);
+}
+
+function handleLayerDrop(event) {
+  event.preventDefault();
+  const target = event.currentTarget;
+  target.classList.remove("drag-over-before", "drag-over-after");
+  
+  if (target === draggedLayerItem) return;
+  
+  const fromId = draggedLayerItem.dataset.elementId;
+  const toId = target.dataset.elementId;
+  const rect = target.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  const insertBefore = event.clientY < midY;
+  
+  reorderLayerElements(fromId, toId, insertBefore);
+}
+
+function handleLayerDragEnd(event) {
+  event.currentTarget.classList.remove("is-dragging");
+  document.querySelectorAll(".layer-item").forEach(item => {
+    item.classList.remove("drag-over-before", "drag-over-after");
+  });
+  draggedLayerItem = null;
+}
+
+function reorderLayerElements(fromId, toId, insertBefore) {
+  const elements = getSlideElements(activeIndex);
+  const fromIndex = elements.findIndex(e => e.id === fromId);
+  const toIndex = elements.findIndex(e => e.id === toId);
+  
+  if (fromIndex === -1 || toIndex === -1) return;
+  
+  const [removed] = elements.splice(fromIndex, 1);
+  const newToIndex = insertBefore ? toIndex : toIndex + 1;
+  const finalToIndex = fromIndex < newToIndex ? newToIndex - 1 : newToIndex;
+  
+  elements.splice(finalToIndex, 0, removed);
+  saveSlideElements(activeIndex, elements);
+  renderSlideElements(activeIndex);
+  renderLayerPanel(elements);
+}
+
+function updateElementToolbarState(elements) {
+  const selectedElements = elements.filter(e => e.id === selectedElementId);
+  const hasSelection = selectedElements.length > 0;
+  const multiSelect = false; // TODO: implement multi-select
+  
+  if (groupElementsBtn) groupElementsBtn.disabled = !multiSelect || elements.length < 2;
+  if (ungroupElementsBtn) ungroupElementsBtn.disabled = !hasSelection || !selectedElement?.groupId;
+  
+  // Alignment buttons
+  const alignButtons = [alignLeftBtn, alignCenterBtn, alignRightBtn, alignTopBtn, alignMiddleBtn, alignBottomBtn];
+  alignButtons.forEach(btn => { if (btn) btn.disabled = !hasSelection; });
+  
+  // Distribute buttons
+  if (distributeHBtn) distributeHBtn.disabled = elements.length < 3;
+  if (distributeVBtn) distributeVBtn.disabled = elements.length < 3;
 }
 
 function selectElement(id) {
@@ -748,6 +1126,147 @@ function deleteSelectedElement() {
   renderSlideElements(activeIndex);
 }
 
+// Element grouping
+function groupSelectedElements() {
+  const elements = getSlideElements(activeIndex);
+  const selected = elements.filter(e => e.selected === true);
+  if (selected.length < 2) return;
+  
+  const groupId = crypto.randomUUID();
+  const bounds = getGroupBounds(selected);
+  
+  // Create group element
+  const groupElement = {
+    id: groupId,
+    type: "group",
+    groupId,
+    children: selected.map(e => e.id),
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    color: "#ef3828",
+  };
+  
+  // Mark children as grouped
+  selected.forEach(e => {
+    e.groupId = groupId;
+    e.selected = false;
+  });
+  
+  // Remove children from elements, add group
+  const newElements = elements.filter(e => !selected.includes(e));
+  newElements.push(groupElement);
+  
+  saveSlideElements(activeIndex, newElements);
+  renderSlideElements(activeIndex);
+  showStatus(`${selected.length} Elemente gruppiert.`);
+}
+
+function ungroupSelectedElement() {
+  const elements = getSlideElements(activeIndex);
+  const selected = elements.find(e => e.id === selectedElementId);
+  if (!selected || selected.type !== "group") return;
+  
+  // Restore children
+  const children = selected.children || [];
+  const childElements = children.map(id => {
+    // Find original element data (would need to be stored)
+    return { id, type: "text", text: "Gruppiertes Element", x: 50, y: 50, width: 30, size: 3, color: "#171717" };
+  });
+  
+  const newElements = elements.filter(e => e.id !== selectedElementId);
+  newElements.push(...childElements);
+  
+  saveSlideElements(activeIndex, newElements);
+  renderSlideElements(activeIndex);
+  showStatus("Gruppe aufgelöst.");
+}
+
+function getGroupBounds(elements) {
+  let minX = 100, minY = 100, maxX = 0, maxY = 0;
+  elements.forEach(e => {
+    minX = Math.min(minX, e.x);
+    minY = Math.min(minY, e.y);
+    maxX = Math.max(maxX, e.x + e.width);
+    maxY = Math.max(maxY, e.y + (e.height || 18));
+  });
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+// Alignment functions
+function alignElements(alignment) {
+  const elements = getSlideElements(activeIndex);
+  const selected = elements.filter(e => e.selected === true);
+  if (selected.length === 0) return;
+  
+  let targetValue;
+  switch (alignment) {
+    case "left":
+      targetValue = Math.min(...selected.map(e => e.x));
+      selected.forEach(e => e.x = targetValue);
+      break;
+    case "center":
+      targetValue = (Math.min(...selected.map(e => e.x)) + Math.max(...selected.map(e => e.x + e.width))) / 2;
+      selected.forEach(e => e.x = targetValue - e.width / 2);
+      break;
+    case "right":
+      targetValue = Math.max(...selected.map(e => e.x + e.width));
+      selected.forEach(e => e.x = targetValue - e.width);
+      break;
+    case "top":
+      targetValue = Math.min(...selected.map(e => e.y));
+      selected.forEach(e => e.y = targetValue);
+      break;
+    case "middle":
+      targetValue = (Math.min(...selected.map(e => e.y)) + Math.max(...selected.map(e => e.y + (e.height || 18)))) / 2;
+      selected.forEach(e => e.y = targetValue - (e.height || 18) / 2);
+      break;
+    case "bottom":
+      targetValue = Math.max(...selected.map(e => e.y + (e.height || 18)));
+      selected.forEach(e => e.y = targetValue - (e.height || 18));
+      break;
+  }
+  
+  saveSlideElements(activeIndex, elements);
+  renderSlideElements(activeIndex);
+  showStatus(`Elemente ${alignment} ausgerichtet.`);
+}
+
+function distributeElements(direction) {
+  const elements = getSlideElements(activeIndex);
+  const selected = elements.filter(e => e.selected === true);
+  if (selected.length < 3) return;
+  
+  // Sort by position
+  selected.sort((a, b) => direction === "horizontal" ? a.x - b.x : a.y - b.y);
+  
+  const first = selected[0];
+  const last = selected[selected.length - 1];
+  const firstPos = direction === "horizontal" ? first.x : first.y;
+  const lastPos = direction === "horizontal" ? last.x + last.width : last.y + (last.height || 18);
+  const totalSpace = lastPos - firstPos;
+  const itemSpace = direction === "horizontal" 
+    ? selected.reduce((sum, e) => sum + e.width, 0)
+    : selected.reduce((sum, e) => sum + (e.height || 18), 0);
+  const gap = (totalSpace - itemSpace) / (selected.length - 1);
+  
+  let currentPos = firstPos;
+  selected.forEach((e, i) => {
+    if (i === 0) return;
+    if (direction === "horizontal") {
+      e.x = currentPos + (e.width / 2);
+    } else {
+      e.y = currentPos + ((e.height || 18) / 2);
+    }
+    currentPos += (direction === "horizontal" ? e.width : (e.height || 18)) + gap;
+  });
+  
+  saveSlideElements(activeIndex, elements);
+  renderSlideElements(activeIndex);
+  showStatus(`Elemente ${direction === "horizontal" ? "horizontal" : "vertikal"} verteilt.`);
+}
+
 function updateSlideNavigation() {
   const total = slides.length;
   slides.forEach((slide, index) => {
@@ -761,6 +1280,7 @@ function updateSlideNavigation() {
   panelSlideNumber.textContent = String(activeIndex + 1).padStart(2, "0");
   transitionLabel.textContent = `FOLIE ${String(activeIndex + 1).padStart(2, "0")} · ÜBERGANG`;
   deleteSlideButton.disabled = activeIndex < STATIC_SLIDE_COUNT;
+  duplicateSlideButton.disabled = activeIndex < STATIC_SLIDE_COUNT;
 }
 
 function renderLayoutGallery() {
@@ -1086,8 +1606,103 @@ function createSlideDot(index) {
   dot.className = "slide-dot";
   dot.type = "button";
   dot.setAttribute("aria-label", `Zu Folie ${index + 1}`);
+  dot.dataset.slideIndex = String(index);
   dot.addEventListener("click", () => setSlide(index));
+  
+  // Drag and drop for reordering
+  dot.draggable = true;
+  dot.addEventListener("dragstart", handleSlideDragStart);
+  dot.addEventListener("dragover", handleSlideDragOver);
+  dot.addEventListener("drop", handleSlideDrop);
+  dot.addEventListener("dragend", handleSlideDragEnd);
+  
   dotsContainer.append(dot);
+}
+
+let draggedSlideDot = null;
+
+function handleSlideDragStart(event) {
+  draggedSlideDot = event.currentTarget;
+  event.currentTarget.classList.add("is-dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", event.currentTarget.dataset.slideIndex);
+}
+
+function handleSlideDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  const target = event.currentTarget;
+  if (target === draggedSlideDot) return;
+  
+  const rect = target.getBoundingClientRect();
+  const midX = rect.left + rect.width / 2;
+  target.classList.toggle("drag-over-before", event.clientX < midX);
+  target.classList.toggle("drag-over-after", event.clientX >= midX);
+}
+
+function handleSlideDrop(event) {
+  event.preventDefault();
+  const target = event.currentTarget;
+  target.classList.remove("drag-over-before", "drag-over-after");
+  
+  if (target === draggedSlideDot) return;
+  
+  const fromIndex = Number(draggedSlideDot.dataset.slideIndex);
+  const toIndex = Number(target.dataset.slideIndex);
+  const rect = target.getBoundingClientRect();
+  const midX = rect.left + rect.width / 2;
+  const insertBefore = event.clientX < midX;
+  const finalToIndex = insertBefore ? toIndex : toIndex + 1;
+  
+  if (fromIndex === finalToIndex || (fromIndex < finalToIndex && fromIndex + 1 === finalToIndex)) return;
+  
+  reorderSlides(fromIndex, finalToIndex);
+}
+
+function handleSlideDragEnd(event) {
+  event.currentTarget.classList.remove("is-dragging");
+  document.querySelectorAll(".slide-dot").forEach(dot => {
+    dot.classList.remove("drag-over-before", "drag-over-after");
+  });
+  draggedSlideDot = null;
+}
+
+function reorderSlides(fromIndex, toIndex) {
+  // Adjust for static slides
+  if (fromIndex < STATIC_SLIDE_COUNT || toIndex < STATIC_SLIDE_COUNT) {
+    showStatus("Die ersten Folien können nicht verschoben werden.");
+    return;
+  }
+  
+  const dynamicFromIndex = fromIndex - STATIC_SLIDE_COUNT;
+  const dynamicToIndex = toIndex - STATIC_SLIDE_COUNT;
+  
+  // Reorder in DOM
+  const slideElements = Array.from(slides);
+  const slide = slideElements[fromIndex];
+  const targetSlide = slideElements[toIndex];
+  
+  if (dynamicFromIndex < dynamicToIndex) {
+    targetSlide.after(slide);
+  } else {
+    targetSlide.before(slide);
+  }
+  
+  // Rebuild slides array
+  slides.length = 0;
+  slides.push(...document.querySelectorAll("[data-slide]"));
+  
+  // Update dynamic slides storage
+  const specs = JSON.parse(localStorage.getItem(DYNAMIC_SLIDES_KEY) || "[]");
+  const [removed] = specs.splice(dynamicFromIndex, 1);
+  specs.splice(dynamicToIndex, 0, removed);
+  localStorage.setItem(DYNAMIC_SLIDES_KEY, JSON.stringify(specs));
+  
+  // Recreate dots and update
+  dotsContainer.replaceChildren();
+  createSlideDots();
+  setSlide(toIndex);
+  showStatus(`Folie ${fromIndex + 1} verschoben.`);
 }
 
 function setAssistantPanelOpen(open) {
@@ -2645,6 +3260,61 @@ deleteSlideButton.addEventListener("click", () => {
     showStatus("Die Zusatzfolie konnte nicht gelöscht werden.");
   }
 });
+duplicateSlideButton.addEventListener("click", () => {
+  if (activeIndex < STATIC_SLIDE_COUNT) return;
+  const specs = getDynamicSlideSpecs();
+  const dynamicIndex = activeIndex - STATIC_SLIDE_COUNT;
+  if (!specs[dynamicIndex]) return;
+  
+  // Get the slide to duplicate
+  const slideToDuplicate = slides[activeIndex];
+  const slideId = crypto.randomUUID();
+  
+  // Clone the slide
+  const newSlide = slideToDuplicate.cloneNode(true);
+  newSlide.classList.remove("is-entering");
+  newSlide.hidden = true;
+  newSlide.id = slideId;
+  newSlide.dataset.slide = "";
+  
+  // Update editable element IDs
+  const editableElementCount = editableElements.length;
+  newSlide.querySelectorAll("[data-editable]").forEach((element) => {
+    const oldEditable = element.dataset.editable;
+    element.dataset.editable = oldEditable.replace(/template-[^-]+-/, `template-${slideId}-`);
+    editableElements.push(element);
+    registerEditableElement(element);
+  });
+  
+  // Insert after the current slide
+  slideToDuplicate.after(newSlide);
+  slides.splice(activeIndex + 1, 0, newSlide);
+  
+  // Copy elements
+  const elements = getSlideElements(activeIndex);
+  const newElements = elements.map(el => ({
+    ...el,
+    id: crypto.randomUUID(),
+  }));
+  localStorage.setItem(`${STORAGE_PREFIX}elements:${activeIndex + 1}`, JSON.stringify(newElements));
+  
+  // Copy transition
+  const transition = localStorage.getItem(`${TRANSITION_STORAGE_PREFIX}${activeIndex}`);
+  if (transition) {
+    localStorage.setItem(`${TRANSITION_STORAGE_PREFIX}${activeIndex + 1}`, transition);
+  }
+  
+  // Update specs
+  const newSpec = { id: slideId, layoutId: specs[dynamicIndex].layoutId };
+  specs.splice(dynamicIndex + 1, 0, newSpec);
+  localStorage.setItem(DYNAMIC_SLIDES_KEY, JSON.stringify(specs));
+  
+  // Recreate dots and select new slide
+  dotsContainer.replaceChildren();
+  createSlideDots();
+  setSlide(activeIndex + 1);
+  showStatus("Folie dupliziert.");
+});
 addVideoButton.addEventListener("click", () => {
   const url = window.prompt("YouTube- oder Vimeo-Link einfügen:");
   if (!url) return;
@@ -2685,6 +3355,23 @@ elementBoldButton.addEventListener("click", () => {
 });
 elementWidth.addEventListener("input", () => updateSelectedElement({ width: Number(elementWidth.value) }));
 deleteElementButton.addEventListener("click", deleteSelectedElement);
+
+// Group/Ungroup
+if (groupElementsBtn) groupElementsBtn.addEventListener("click", groupSelectedElements);
+if (ungroupElementsBtn) ungroupElementsBtn.addEventListener("click", ungroupSelectedElement);
+
+// Alignment
+if (alignLeftBtn) alignLeftBtn.addEventListener("click", () => alignElements("left"));
+if (alignCenterBtn) alignCenterBtn.addEventListener("click", () => alignElements("center"));
+if (alignRightBtn) alignRightBtn.addEventListener("click", () => alignElements("right"));
+if (alignTopBtn) alignTopBtn.addEventListener("click", () => alignElements("top"));
+if (alignMiddleBtn) alignMiddleBtn.addEventListener("click", () => alignElements("middle"));
+if (alignBottomBtn) alignBottomBtn.addEventListener("click", () => alignElements("bottom"));
+
+// Distribute
+if (distributeHBtn) distributeHBtn.addEventListener("click", () => distributeElements("horizontal"));
+if (distributeVBtn) distributeVBtn.addEventListener("click", () => distributeElements("vertical"));
+
 exportProjectButton.addEventListener("click", exportProject);
 importProjectButton.addEventListener("click", () => projectFileInput.click());
 projectFileInput.addEventListener("change", () => {
