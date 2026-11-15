@@ -14,7 +14,8 @@
     <script type="module" src="./app.js?v=10"></script>
   </head>
   <body>
-    <main class="app">
+    <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
+    <main class="app" id="main-content">
       <header class="topbar">
         <a class="brand" href="./" aria-label="GFS Studio Startseite">
           <span class="brand-mark" aria-hidden="true">G</span>
@@ -119,9 +120,9 @@
             <p class="layout-intro">Erstelle professionelle Roadmaps mit Phasen, Meilensteinen und Abhängigkeiten. Alles per Drag & Drop anpassbar.</p>
             <div class="roadmap-builder">
               <div class="roadmap-toolbar">
-                <button class="roadmap-action" id="roadmap-add-phase" type="button"><span>＋</span> Phase</button>
-                <button class="roadmap-action" id="roadmap-add-milestone" type="button"><span>◆</span> Meilenstein</button>
-                <button class="roadmap-action" id="roadmap-add-dependency" type="button"><span>⇄</span> Abhängigkeit</button>
+                <button class="roadmap-action" id="roadmap-add-phase" type="button" aria-label="Phase hinzufügen"><span aria-hidden="true">＋</span> Phase</button>
+                <button class="roadmap-action" id="roadmap-add-milestone" type="button" aria-label="Meilenstein hinzufügen"><span aria-hidden="true">◆</span> Meilenstein</button>
+                <button class="roadmap-action" id="roadmap-add-dependency" type="button" aria-label="Abhängigkeit hinzufügen"><span aria-hidden="true">⇄</span> Abhängigkeit</button>
               </div>
               <div class="roadmap-canvas" id="roadmap-canvas"></div>
               <div class="roadmap-properties" id="roadmap-properties" hidden>
@@ -148,7 +149,7 @@
                   <span>Farbe</span>
                   <input id="roadmap-element-color" type="color" value="#ef3828" />
                 </label>
-                <button class="roadmap-action roadmap-delete" id="roadmap-delete-element" type="button">Element löschen</button>
+                <button class="roadmap-action roadmap-delete" id="roadmap-delete-element" type="button" aria-label="Ausgewähltes Roadmap-Element löschen">Element löschen</button>
               </div>
             </div>
             <button class="roadmap-apply" id="roadmap-apply" type="button">Als Folie einfügen</button>
@@ -393,14 +394,14 @@
             <button class="panel-close" id="panel-close" type="button" aria-label="Elemente-Menü schließen">×</button>
           </div>
           <div class="element-actions">
-            <button class="element-action" id="add-text-button" type="button"><span>＋</span> Text</button>
-            <button class="element-action" id="add-shape-button" type="button"><span>＋</span> Form</button>
-            <button class="element-action" id="add-image-button" type="button"><span>＋</span> Bild</button>
-            <button class="element-action element-action-video" id="add-video-button" type="button"><span>▶</span> Video-Link</button>
-            <button class="element-action" id="add-sticky-button" type="button"><span>🗒</span> Notizzettel</button>
-            <button class="element-action" id="add-arrow-button" type="button"><span>➤</span> Pfeil</button>
-            <button class="element-action" id="add-icon-button" type="button"><span>★</span> Icon</button>
-            <button class="element-action" id="add-chart-button" type="button"><span>📊</span> Diagramm</button>
+            <button class="element-action" id="add-text-button" type="button" aria-label="Text-Element hinzufügen"><span aria-hidden="true">＋</span> Text</button>
+            <button class="element-action" id="add-shape-button" type="button" aria-label="Form-Element hinzufügen"><span aria-hidden="true">＋</span> Form</button>
+            <button class="element-action" id="add-image-button" type="button" aria-label="Bild-Element hinzufügen"><span aria-hidden="true">＋</span> Bild</button>
+            <button class="element-action element-action-video" id="add-video-button" type="button" aria-label="Video-Element hinzufügen"><span aria-hidden="true">▶</span> Video-Link</button>
+            <button class="element-action" id="add-sticky-button" type="button" aria-label="Notizzettel hinzufügen"><span aria-hidden="true">🗒</span> Notizzettel</button>
+            <button class="element-action" id="add-arrow-button" type="button" aria-label="Pfeil hinzufügen"><span aria-hidden="true">➤</span> Pfeil</button>
+            <button class="element-action" id="add-icon-button" type="button" aria-label="Icon hinzufügen"><span aria-hidden="true">★</span> Icon</button>
+            <button class="element-action" id="add-chart-button" type="button" aria-label="Diagramm-Element hinzufügen"><span aria-hidden="true">📊</span> Diagramm</button>
             <input id="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
           </div>
           <div class="panel-divider"></div>
@@ -513,6 +514,9 @@
                 <option value="lavender">Flieder</option>
               </select>
             </label>
+            <button class="icon-button" id="master-editor-button" type="button" aria-label="Slide Master bearbeiten" title="Slide Master bearbeiten">
+              <span aria-hidden="true">⚙</span>
+            </button>
             <label class="transition-picker">
               <span id="transition-label">FOLIE 01 · ÜBERGANG</span>
               <select id="transition-select" aria-label="Folienübergang auswählen">

@@ -10,6 +10,132 @@
   --red: #ef3828;
   --line: #44433f;
   --muted: #9c9a94;
+  /* Accessibility: High contrast mode support */
+  --focus-ring: 3px solid var(--red);
+  --focus-offset: 3px;
+  --skip-link-bg: var(--ink);
+  --skip-link-color: var(--paper);
+}
+
+/* Skip link for keyboard navigation */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  background: var(--skip-link-bg);
+  color: var(--skip-link-color);
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 0 0 8px 8px;
+  z-index: 10000;
+  text-decoration: none;
+  transition: top 150ms ease;
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* Enhanced focus styles for all interactive elements */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --red: #ff6b5b;
+    --line: #888;
+    --muted: #ccc;
+  }
+  
+  button,
+  .layout-card,
+  .element-panel,
+  .assistant-panel,
+  .nim-settings-dialog {
+    border-width: 2px !important;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Screen reader only content */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Live region for status announcements */
+[aria-live="polite"],
+[aria-live="assertive"] {
+  /* Ensure live regions are accessible */
+}
+
+/* Keyboard navigation indicators */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Ensure sufficient touch target sizes */
+button,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"],
+select {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Form labels association */
+label {
+  cursor: pointer;
+}
+
+/* Disabled state clarity */
+:disabled,
+[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Error state styling */
+[aria-invalid="true"] {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 2px rgba(239, 56, 40, 0.3);
+}
+
+/* Required field indicator */
+[aria-required="true"]::after {
+  content: " *";
+  color: var(--red);
 }
 
 * {
@@ -3126,6 +3252,210 @@ model-viewer[hidden] {
 .footer-right {
   justify-content: flex-end;
   gap: 12px;
+}
+
+/* Slide Master Editor */
+.master-editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 150ms ease;
+}
+
+.master-editor {
+  background: #20201e;
+  border: 1px solid #44433f;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 40%);
+}
+
+.master-editor header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #44433f;
+}
+
+.master-editor header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #eeece5;
+}
+
+.master-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #eeece5;
+  font-size: 20px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.master-close:hover {
+  background: #33322e;
+}
+
+.master-tabs {
+  display: flex;
+  border-bottom: 1px solid #44433f;
+  background: #292926;
+}
+
+.master-tab {
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  color: #a7a49d;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.master-tab:hover {
+  color: #eeece5;
+}
+
+.master-tab.active {
+  color: var(--red);
+  border-bottom: 2px solid var(--red);
+}
+
+.master-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.master-pane {
+  display: none;
+}
+
+.master-pane.active {
+  display: block;
+  animation: fadeIn 150ms ease;
+}
+
+.master-item {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #292926;
+  border-radius: 6px;
+  border: 1px solid #44433f;
+}
+
+.master-item label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #eeece5;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.master-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.master-controls input[type="number"] {
+  width: 60px;
+  padding: 6px 8px;
+  border: 1px solid #484743;
+  background: #1a1a18;
+  color: #eeece5;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.master-controls input[type="color"] {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #484743;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.master-controls select {
+  padding: 6px 8px;
+  border: 1px solid #484743;
+  background: #1a1a18;
+  color: #eeece5;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.master-controls label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #a7a49d;
+  cursor: pointer;
+}
+
+.master-editor footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #44433f;
+  background: #292926;
+}
+
+.master-apply, .master-reset {
+  padding: 8px 16px;
+  border: 1px solid #484743;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.master-apply {
+  color: #171717;
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.master-apply:hover {
+  background: #d63024;
+}
+
+.master-reset {
+  color: #eeece5;
+  background: transparent;
+}
+
+.master-reset:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .quick-export {

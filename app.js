@@ -182,6 +182,7 @@ const resetButton = document.querySelector("#reset-button");
 const fullscreenButton = document.querySelector("#fullscreen-button");
 const templateSelect = document.querySelector("#template-select");
 const transitionSelect = document.querySelector("#transition-select");
+const masterEditorButton = document.querySelector("#master-editor-button");
 const transitionLabel = document.querySelector("#transition-label");
 const statusMessage = document.querySelector("#status-message");
 const editableElements = Array.from(document.querySelectorAll("[data-editable]"));
@@ -206,6 +207,29 @@ const MAX_MODEL_SIZE = 150 * 1024 * 1024;
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const MAX_VIDEO_COUNT = 5;
 const MAX_PROJECT_SIZE = 4 * 1024 * 1024;
+
+// Performance optimization utilities
+const debounce = (fn, delay) => {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+};
+
+const throttle = (fn, limit) => {
+  let inThrottle;
+  return (...args) => {
+    if (!inThrottle) {
+      fn(...args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  };
+};
+
+// Virtualized rendering for layout gallery
+const VIRTUALIZED_ITEMS_PER_VIEW = 12;
 const TEMPLATE_IDS = ["editorial", "ocean", "botanical", "terracotta", "cobalt", "lavender"];
 const OPENROUTER_MODEL_DEFAULT = "google/gemma-2-9b-it:free";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -509,6 +533,78 @@ const OPENROUTER_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "generate_image",
+      description: "Generiert ein Bild via KI (Pollinations API) basierend auf einer Textbeschreibung. Für Illustrationen, Konzeptbilder, Hintergründe. Kostenlos, keine API-Key nötig.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Bildbeschreibung auf Englisch (max. 500 Zeichen)" },
+          width: { type: "integer", description: "Breite in Pixeln (Standard: 1024, max 1920)", minimum: 256, maximum: 1920 },
+          height: { type: "integer", description: "Höhe in Pixeln (Standard: 1024, max 1920)", minimum: 256, maximum: 1920 },
+          model: { type: "string", enum: ["flux", "gptimage", "midjourney", "dall-e-3"], description: "KI-Modell (Standard: flux)" },
+          seed: { type: "integer", description: "Seed für reproduzierbare Ergebnisse (optional)" },
+          transparent: { type: "boolean", description: "Transparenter Hintergrund (PNG)" },
+        },
+        required: ["prompt"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_slides",
+      description: "Generiert mehrere Folien auf einmal basierend auf einem Thema. Erstellt Gliederung, wählt passende Layouts, fügt Titel und Inhalte hinzu. Für schnelle Präsentationserstellung.",
+      parameters: {
+        type: "object",
+        properties: {
+          topic: { type: "string", description: "Thema der Präsentation (max. 200 Zeichen)" },
+          slide_count: { type: "integer", description: "Anzahl Folien (3-15, Standard: 7)", minimum: 3, maximum: 15 },
+          style: { type: "string", enum: ["academic", "business", "creative", "minimal"], description: "Präsentationsstil (Standard: academic)" },
+          include_images: { type: "boolean", description: "Bild-Platzhalter einfügen (Standard: true)" },
+        },
+        required: ["topic"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_speaker_notes",
+      description: "Generiert Sprechernotizen für die aktuelle oder alle Folien. Enthält Zeitangaben, Betonungshinweise, Übergänge und Tipps für den Vortrag.",
+      parameters: {
+        type: "object",
+        properties: {
+          scope: { type: "string", enum: ["current", "all"], description: "Nur aktuelle Folie oder alle Folien (Standard: current)" },
+          detail_level: { type: "string", enum: ["brief", "detailed"], description: "Detailgrad (Standard: detailed)" },
+          include_timing: { type: "boolean", description: "Zeitangaben pro Folie einschließen (Standard: true)" },
+          include_transitions: { type: "boolean", description: "Übergangshinweise zwischen Folien (Standard: true)" },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "translate_presentation",
+      description: "Übersetzt die gesamte Präsentation oder einzelne Folien in eine andere Sprache. Nutzt MyMemory API. Für internationale Präsentationen, mehrsprachige Vorträge.",
+      parameters: {
+        type: "object",
+        properties: {
+          target_lang: { type: "string", description: "Zielsprache als ISO-639-1 Code (z. B. en, fr, es, it)" },
+          scope: { type: "string", enum: ["current", "all"], description: "Nur aktuelle Folie oder alle Folien (Standard: all)" },
+          source_lang: { type: "string", description: "Quellsprache als ISO-639-1 Code (Standard: auto)" },
+        },
+        required: ["target_lang"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 const SLIDE_LAYOUTS = [
@@ -538,6 +634,262 @@ const SLIDE_LAYOUTS = [
   { id: "starter-questions", name: "Fragerunde", description: "Abschluss und Diskussion", sourceSlideIndex: 6 },
 ];
 const STATIC_SLIDE_COUNT = slides.length;
+
+// Slide Master System
+const SLIDE_MASTERS = {
+  editorial: {
+    name: "Editorial",
+    placeholders: {
+      header: { x: 50, y: 8, width: 90, size: 2.5, color: "#171717", bold: true, align: "center" },
+      footer: { x: 50, y: 92, width: 90, size: 1.2, color: "#85837d", align: "center" },
+      pageNumber: { x: 95, y: 95, width: 10, size: 1, color: "#85837d", align: "right" },
+    },
+    decorations: {
+      headerLine: { type: "shape", shape: "line", x: 5, y: 14, width: 90, height: 1, color: "#ef3828" },
+      footerLine: { type: "shape", shape: "line", x: 5, y: 88, width: 90, height: 1, color: "#44433f" },
+    },
+  },
+  ocean: {
+    name: "Ozean",
+    placeholders: {
+      header: { x: 50, y: 8, width: 90, size: 2.5, color: "#0d47a1", bold: true, align: "center" },
+      footer: { x: 50, y: 92, width: 90, size: 1.2, color: "#546e7a", align: "center" },
+      pageNumber: { x: 95, y: 95, width: 10, size: 1, color: "#546e7a", align: "right" },
+    },
+    decorations: {
+      headerWave: { type: "shape", shape: "line", x: 5, y: 14, width: 90, height: 2, color: "#1565c0" },
+    },
+  },
+  botanical: {
+    name: "Botanik",
+    placeholders: {
+      header: { x: 50, y: 8, width: 90, size: 2.5, color: "#1b5e20", bold: true, align: "center" },
+      footer: { x: 50, y: 92, width: 90, size: 1.2, color: "#558b2f", align: "center" },
+      pageNumber: { x: 95, y: 95, width: 10, size: 1, color: "#558b2f", align: "right" },
+    },
+    decorations: {
+      leafAccent: { type: "shape", shape: "circle", x: 90, y: 8, width: 8, height: 8, color: "#2e7d32" },
+    },
+  },
+  terracotta: {
+    name: "Terrakotta",
+    placeholders: {
+      header: { x: 50, y: 8, width: 90, size: 2.5, color: "#bf360c", bold: true, align: "center" },
+      footer: { x: 50, y: 92, width: 90, size: 1.2, color: "#d84315", align: "center" },
+      pageNumber: { x: 95, y: 95, width: 10, size: 1, color: "#d84315", align: "right" },
+    },
+    decorations: {
+      accentBar: { type: "shape", shape: "rectangle", x: 5, y: 14, width: 90, height: 3, color: "#e65100" },
+    },
+  },
+  cobalt: {
+    name: "Kobaltblau",
+    placeholders: {
+      header: { x: 50, y: 8, width: 90, size: 2.5, color: "#0d47a1", bold: true, align: "center" },
+      footer: { x: 50, y: 92, width: 90, size: 1.2, color: "#1565c0", align: "center" },
+      pageNumber: { x: 95, y: 95, width: 10, size: 1, color: "#1565c0", align: "right" },
+    },
+    decorations: {
+      geometricLine: { type: "shape", shape: "line", x: 5, y: 14, width: 90, height: 2, color: "#1976d2" },
+    },
+  },
+  lavender: {
+    name: "Flieder",
+    placeholders: {
+      header: { x: 50, y: 8, width: 90, size: 2.5, color: "#4a148c", bold: true, align: "center" },
+      footer: { x: 50, y: 92, width: 90, size: 1.2, color: "#7b1fa2", align: "center" },
+      pageNumber: { x: 95, y: 95, width: 10, size: 1, color: "#7b1fa2", align: "right" },
+    },
+    decorations: {
+      dotPattern: { type: "shape", shape: "circle", x: 90, y: 8, width: 4, height: 4, color: "#8e24aa" },
+    },
+  },
+};
+
+// Current master being edited
+let currentMaster = null;
+let masterElements = [];
+
+function getMasterForTemplate(template) {
+  return SLIDE_MASTERS[template] || SLIDE_MASTERS.editorial;
+}
+
+function applyMasterToSlide(slideIndex, master) {
+  const elements = getSlideElements(slideIndex);
+  const masterElements = [];
+  
+  // Add placeholders
+  Object.entries(master.placeholders).forEach(([key, placeholder]) => {
+    masterElements.push({
+      id: crypto.randomUUID(),
+      type: "text",
+      text: key === "header" ? "Präsentationstitel" : key === "footer" ? "Fußzeile" : "1 / 10",
+      ...placeholder,
+      dataset: { masterKey: key },
+    });
+  });
+  
+  // Add decorations
+  Object.entries(master.decorations).forEach(([key, decoration]) => {
+    masterElements.push({
+      id: crypto.randomUUID(),
+      ...decoration,
+      dataset: { masterKey: key },
+    });
+  });
+  
+  // Merge with existing elements (keep user elements, add master elements)
+  const userElements = elements.filter(e => !e.dataset?.masterKey);
+  const allElements = [...masterElements, ...userElements];
+  
+  saveSlideElements(slideIndex, allElements);
+  renderSlideElements(slideIndex);
+}
+
+function applyMasterToAllSlides(master) {
+  slides.forEach((_, index) => {
+    if (index >= STATIC_SLIDE_COUNT) {
+      applyMasterToSlide(index, master);
+    }
+  });
+  showStatus(`Master "${master.name}" auf alle Folien angewendet.`);
+}
+
+function openMasterEditor() {
+  currentMaster = getMasterForTemplate(stage.dataset.template);
+  masterElements = [];
+  
+  // Create master editor UI
+  const editor = document.createElement("div");
+  editor.className = "master-editor-overlay";
+  editor.innerHTML = `
+    <div class="master-editor">
+      <header>
+        <h2>Slide Master bearbeiten: ${currentMaster.name}</h2>
+        <button class="master-close" aria-label="Schließen">×</button>
+      </header>
+      <div class="master-tabs">
+        <button class="master-tab active" data-tab="placeholders">Platzhalter</button>
+        <button class="master-tab" data-tab="decorations">Dekorationen</button>
+        <button class="master-tab" data-tab="preview">Vorschau</button>
+      </div>
+      <div class="master-content">
+        <div class="master-pane active" id="master-placeholders"></div>
+        <div class="master-pane" id="master-decorations"></div>
+        <div class="master-pane" id="master-preview"></div>
+      </div>
+      <footer>
+        <button class="master-apply" id="master-apply-all" aria-label="Master-Änderungen auf alle Folien anwenden">Auf alle Folien anwenden</button>
+        <button class="master-reset" id="master-reset" aria-label="Master auf Standardwerte zurücksetzen">Zurücksetzen</button>
+      </footer>
+    </div>
+  `;
+  
+  document.body.append(editor);
+  
+  // Populate placeholders tab
+  const placeholdersPane = editor.querySelector("#master-placeholders");
+  Object.entries(currentMaster.placeholders).forEach(([key, placeholder]) => {
+    const item = document.createElement("div");
+    item.className = "master-item";
+    item.innerHTML = `
+      <label>${key}</label>
+      <div class="master-controls">
+        <input type="number" data-prop="x" value="${placeholder.x}" placeholder="X %" min="0" max="100" step="1">
+        <input type="number" data-prop="y" value="${placeholder.y}" placeholder="Y %" min="0" max="100" step="1">
+        <input type="number" data-prop="width" value="${placeholder.width}" placeholder="Breite %" min="5" max="95" step="1">
+        <input type="number" data-prop="size" value="${placeholder.size}" placeholder="Größe" min="1.4" max="7" step="0.1">
+        <input type="color" data-prop="color" value="${placeholder.color}">
+        <select data-prop="align">
+          <option value="left" ${placeholder.align === "left" ? "selected" : ""}>Links</option>
+          <option value="center" ${placeholder.align === "center" ? "selected" : ""}>Zentriert</option>
+          <option value="right" ${placeholder.align === "right" ? "selected" : ""}>Rechts</option>
+        </select>
+        <label><input type="checkbox" data-prop="bold" ${placeholder.bold ? "checked" : ""}> Fett</label>
+      </div>
+    `;
+    placeholdersPane.append(item);
+  });
+  
+  // Populate decorations tab
+  const decorationsPane = editor.querySelector("#master-decorations");
+  Object.entries(currentMaster.decorations).forEach(([key, decoration]) => {
+    const item = document.createElement("div");
+    item.className = "master-item";
+    item.innerHTML = `
+      <label>${key} (${decoration.type})</label>
+      <div class="master-controls">
+        <input type="number" data-prop="x" value="${decoration.x}" placeholder="X %" min="0" max="100" step="1">
+        <input type="number" data-prop="y" value="${decoration.y}" placeholder="Y %" min="0" max="100" step="1">
+        <input type="number" data-prop="width" value="${decoration.width}" placeholder="Breite %" min="5" max="95" step="1">
+        ${decoration.height !== undefined ? `<input type="number" data-prop="height" value="${decoration.height}" placeholder="Höhe %" min="5" max="90" step="1">` : ""}
+        <input type="color" data-prop="color" value="${decoration.color}">
+        ${decoration.shape ? `<select data-prop="shape"><option value="rectangle" ${decoration.shape === "rectangle" ? "selected" : ""}>Rechteck</option><option value="circle" ${decoration.shape === "circle" ? "selected" : ""}>Kreis</option><option value="line" ${decoration.shape === "line" ? "selected" : ""}>Linie</option></select>` : ""}
+      </div>
+    `;
+    decorationsPane.append(item);
+  });
+  
+  // Event listeners
+  editor.querySelector(".master-close").addEventListener("click", () => editor.remove());
+  editor.querySelectorAll(".master-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      editor.querySelectorAll(".master-tab").forEach(t => t.classList.remove("active"));
+      editor.querySelectorAll(".master-pane").forEach(p => p.classList.remove("active"));
+      tab.classList.add("active");
+      editor.querySelector(`#master-${tab.dataset.tab}`).classList.add("active");
+    });
+  });
+  
+  editor.querySelector("#master-apply-all").addEventListener("click", () => {
+    // Collect changes from UI
+    const updatedMaster = { ...currentMaster, placeholders: {}, decorations: {} };
+    
+    editor.querySelectorAll("#master-placeholders .master-item").forEach(item => {
+      const key = item.querySelector("label").textContent;
+      const controls = item.querySelectorAll("input, select");
+      const placeholder = { ...currentMaster.placeholders[key] };
+      controls.forEach(control => {
+        if (control.type === "checkbox") {
+          placeholder[control.dataset.prop] = control.checked;
+        } else if (control.type === "color" || control.type === "number") {
+          placeholder[control.dataset.prop] = control.type === "number" ? Number(control.value) : control.value;
+        } else {
+          placeholder[control.dataset.prop] = control.value;
+        }
+      });
+      updatedMaster.placeholders[key] = placeholder;
+    });
+    
+    editor.querySelectorAll("#master-decorations .master-item").forEach(item => {
+      const key = item.querySelector("label").textContent.split(" (")[0];
+      const controls = item.querySelectorAll("input, select");
+      const decoration = { ...currentMaster.decorations[key] };
+      controls.forEach(control => {
+        if (control.type === "color" || control.type === "number") {
+          decoration[control.dataset.prop] = control.type === "number" ? Number(control.value) : control.value;
+        } else {
+          decoration[control.dataset.prop] = control.value;
+        }
+      });
+      updatedMaster.decorations[key] = decoration;
+    });
+    
+    currentMaster = updatedMaster;
+    SLIDE_MASTERS[stage.dataset.template] = updatedMaster;
+    applyMasterToAllSlides(updatedMaster);
+    showStatus("Master aktualisiert und angewendet.");
+  });
+  
+  editor.querySelector("#master-reset").addEventListener("click", () => {
+    // Reset to defaults
+    const defaultMaster = getMasterForTemplate(stage.dataset.template);
+    currentMaster = { ...defaultMaster };
+    editor.remove();
+    openMasterEditor();
+  });
+}
+
 
 function getSlideElements(index) {
   try {
@@ -609,7 +961,7 @@ function getCustomLayer(slide) {
   return layer;
 }
 
-function renderSlideElements(index) {
+function renderSlideElementsInternal(index) {
   const slide = slides[index];
   if (!slide) return;
   const layer = getCustomLayer(slide);
@@ -775,7 +1127,26 @@ function renderSlideElements(index) {
   if (index === activeIndex) renderElementList();
 }
 
+// Debounced render functions for performance
+const debouncedRenderElementList = debounce(() => {
+  if (typeof activeIndex === "number" && activeIndex >= 0) {
+    renderElementListInternal();
+  }
+}, 50);
+
+const debouncedRenderSlideElements = debounce((index) => {
+  renderSlideElementsInternal(index);
+}, 50);
+
+function renderSlideElements(index) {
+  debouncedRenderSlideElements(index);
+}
+
 function renderElementList() {
+  debouncedRenderElementList();
+}
+
+function renderElementListInternal() {
   const elements = getSlideElements(activeIndex);
   elementList.replaceChildren();
   if (elements.length === 0) {
@@ -1752,6 +2123,93 @@ function appendChatMessage(role, text) {
   return message;
 }
 
+async function requestOpenRouterStream(messages, includeTools, onChunk) {
+  const apiKey = getStoredOpenRouterApiKey();
+  if (!apiKey) throw new Error("OpenRouter ist nicht eingerichtet. Öffne die KI-Einstellungen und trage deinen API-Schlüssel ein.");
+  
+  const response = await fetch(OPENROUTER_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": window.location.origin,
+      "X-Title": "GFS Presentation Editor",
+    },
+    body: JSON.stringify({
+      model: openRouterSettings.model,
+      messages,
+      ...(includeTools ? { tools: OPENROUTER_TOOLS, tool_choice: "auto" } : {}),
+      temperature: openRouterSettings.temperature,
+      max_tokens: 1200,
+      stream: true,
+    }),
+    signal: AbortSignal.timeout(90000),
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    let detail = "";
+    try {
+      const errorData = JSON.parse(responseText);
+      detail = errorData?.error?.message || errorData?.message || "";
+    } catch {
+      detail = "";
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("OpenRouter hat den API-Schlüssel abgelehnt. Prüfe den Schlüssel in den KI-Einstellungen.");
+    }
+    if (response.status === 404) {
+      throw new Error(`Das Modell „${openRouterSettings.model}“ wurde nicht gefunden. Prüfe die Modellkennung in den KI-Einstellungen.`);
+    }
+    throw new Error(detail || `OpenRouter antwortete mit HTTP ${response.status}.`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullContent = "";
+  let toolCalls = [];
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+        
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta) {
+            if (delta.content) {
+              fullContent += delta.content;
+              onChunk?.(delta.content, "content");
+            }
+            if (delta.tool_calls) {
+              toolCalls = delta.tool_calls;
+              onChunk?.(delta.tool_calls, "tool_calls");
+            }
+          }
+        } catch (e) {
+          // Ignore parse errors for incomplete chunks
+        }
+      }
+    }
+  }
+
+  // Return final message in same format as non-streaming
+  return {
+    content: fullContent,
+    tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+  };
+}
+
 function getStoredOpenRouterApiKey() {
   try {
     return localStorage.getItem(OPENROUTER_API_KEY_KEY) || sessionStorage.getItem(OPENROUTER_API_KEY_KEY) || "";
@@ -1850,67 +2308,6 @@ async function requestOpenRouter(messages, includeTools) {
   return message;
 }
 
-function saveOpenRouterSettings(event) {
-  event.preventDefault();
-  const apiKey = openRouterApiKeyInput.value.trim();
-  const model = openRouterModelInput.value.trim();
-  if (!apiKey) {
-    openRouterSettingsStatus.textContent = "Bitte einen OpenRouter API-Schlüssel eintragen.";
-    openRouterApiKeyInput.focus();
-    return;
-  }
-  if (/[\r\n]/.test(apiKey)) {
-    openRouterSettingsStatus.textContent = "Der API-Schlüssel enthält ungültige Zeilenumbrüche.";
-    openRouterApiKeyInput.focus();
-    return;
-  }
-  if (!/^[\w./:-]{1,160}$/.test(model)) {
-    openRouterSettingsStatus.textContent = "Die Modellkennung darf nur Buchstaben, Zahlen und / . _ : - enthalten.";
-    openRouterModelInput.focus();
-    return;
-  }
-
-  const nextSettings = {
-    model,
-    temperature: Number(openRouterTemperatureInput.value),
-    rememberKey: openRouterRememberKeyInput.checked,
-  };
-  try {
-    localStorage.setItem(OPENROUTER_SETTINGS_KEY, JSON.stringify(nextSettings));
-    if (openRouterRememberKeyInput.checked) {
-      localStorage.setItem(OPENROUTER_API_KEY_KEY, apiKey);
-      sessionStorage.removeItem(OPENROUTER_API_KEY_KEY);
-    } else {
-      sessionStorage.setItem(OPENROUTER_API_KEY_KEY, apiKey);
-      localStorage.removeItem(OPENROUTER_API_KEY_KEY);
-    }
-    openRouterSettings = nextSettings;
-    openRouterSettingsDialog.close();
-    updateOpenRouterAssistantState();
-    showStatus("API-Schlüssel lokal gespeichert. Chat und Info-Check benötigen wegen CORS einen Server-Proxy.");
-  } catch (error) {
-    console.error("Die NVIDIA-Einstellungen konnten nicht gespeichert werden.", error);
-    openRouterSettingsStatus.textContent = "Speichern im Browser nicht möglich. Prüfe die Speichereinstellungen.";
-  }
-}
-
-function clearOpenRouterApiKey() {
-  try {
-    localStorage.removeItem(OPENROUTER_API_KEY_KEY);
-    sessionStorage.removeItem(OPENROUTER_API_KEY_KEY);
-    openRouterApiKeyInput.value = "";
-    openRouterSettingsStatus.textContent = "API-Schlüssel entfernt.";
-    updateOpenRouterAssistantState();
-  } catch (error) {
-    console.error("Der NVIDIA API-Schlüssel konnte nicht entfernt werden.", error);
-    openRouterSettingsStatus.textContent = "Der Schlüssel konnte nicht entfernt werden.";
-  }
-}
-
-function initializeAiAssistant() {
-  updateOpenRouterAssistantState();
-  if (!getStoredOpenRouterApiKey()) openOpenRouterSettings();
-}
 
 async function sendAiMessage(text) {
   if (!text || aiBusy) return;
@@ -1927,38 +2324,58 @@ async function sendAiMessage(text) {
   chatConversation.push({ role: "user", content: text });
   let thinkingMessage;
   try {
-    thinkingMessage = appendChatMessage("assistant", "Ich prüfe den Folienkontext und bereite eine Antwort vor …");
+    thinkingMessage = appendChatMessage("assistant", "");
     thinkingMessage.classList.add("chat-message-thinking");
-    const slideText = getCurrentSlideText();
-    const systemPrompt = `Du bist ein hilfreicher deutscher Präsentations-Coach für GFS-Schülerinnen und -Schüler. Antworte verständlich, knapp und altersgerecht. Erfinde keine Fakten oder Quellen. Wenn Informationen unsicher oder nicht überprüfbar sind, sage das deutlich. Der Chat ist zuerst zum Beraten da: Füge niemals von dir aus Folien oder Texte hinzu. Rufe add_slide oder add_text_to_slide ausschließlich auf, wenn die aktuelle Nutzernachricht ausdrücklich darum bittet, etwas zur Präsentation hinzuzufügen oder einzufügen. Bei Fragen, Feedback- oder Verbesserungsvorschlägen ohne ausdrückliche Einfüge-Bitte antwortest du nur im Chat. Beschreibe nach Werkzeugaktionen kurz und ehrlich, was du geändert hast. Suche bei Bedarf externe Hintergrundinformationen mit search_wikipedia und kennzeichne Wikipedia als Orientierung, nicht als abschließenden Beleg.\n\nAktueller Kontext: Folie ${activeIndex + 1} von ${slides.length}.\n${slideText || "(Die Folie enthält noch keinen Text.)"}`;
+    const systemPrompt = `Du bist ein hilfreicher deutscher Präsentations-Coach für GFS-Schülerinnen und -Schüler. Antworte verständlich, knapp und altersgerecht. Erfinde keine Fakten oder Quellen. Wenn Informationen unsicher oder nicht überprüfbar sind, sage das deutlich. Der Chat ist zuerst zum Beraten da: Füge niemals von dir aus Folien oder Texte hinzu. Rufe add_slide oder add_text_to_slide ausschließlich auf, wenn die aktuelle Nutzernachricht ausdrücklich darum bittet, etwas zur Präsentation hinzuzufügen oder einzufügen. Bei Fragen, Feedback- oder Verbesserungsvorschlägen ohne ausdrückliche Einfüge-Bitte antwortest du nur im Chat. Beschreibe nach Werkzeugaktionen kurz und ehrlich, was du geändert hast. Suche bei Bedarf externe Hintergrundinformationen mit search_wikipedia und kennzeichne Wikipedia als Orientierung, nicht als abschließenden Beleg.
+
+${getFullAIContext()}
+
+${getCurrentSlideContext()}`;
     const includeTools = assistantToolsEnabled.checked;
     const additionsAllowed = explicitlyRequestsPresentationAddition(text);
     let responseText = "";
     let toolRounds = 0;
     let toolsExecuted = 0;
-    while (toolRounds < 4) {
-      const requestMessages = [
-        { role: "system", content: systemPrompt },
-        ...chatConversation,
-      ];
-      const message = await requestOpenRouter(requestMessages, includeTools);
-      const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-      if (!toolCalls.length) {
-        responseText = typeof message.content === "string" ? message.content.trim() : "";
-        if (responseText) chatConversation.push({ role: "assistant", content: responseText });
-        break;
+    
+    // Use streaming for the first response
+    const requestMessages = [
+      { role: "system", content: systemPrompt },
+      ...chatConversation,
+    ];
+    
+    let fullContent = "";
+    let toolCalls = [];
+    
+    // Stream the response
+    const streamResult = await requestOpenRouterStream(requestMessages, includeTools, (chunk, type) => {
+      if (type === "content") {
+        fullContent += chunk;
+        thinkingMessage.textContent = fullContent + "▌"; // Show typing cursor
+      } else if (type === "tool_calls") {
+        toolCalls = chunk;
       }
-
+    });
+    
+    responseText = fullContent;
+    if (responseText) {
+      chatConversation.push({ role: "assistant", content: responseText });
+      thinkingMessage.textContent = responseText;
+    }
+    
+    // Handle tool calls if any
+    if (streamResult.tool_calls && streamResult.tool_calls.length > 0) {
+      toolCalls = streamResult.tool_calls;
       chatConversation.push({
         role: "assistant",
-        content: typeof message.content === "string" ? message.content : null,
+        content: responseText,
         tool_calls: toolCalls,
       });
+      
       for (const call of toolCalls) {
         const name = call?.function?.name;
         const callId = call?.id;
         if (!callId || typeof callId !== "string" || typeof name !== "string") {
-          throw new Error("NVIDIA hat einen unvollständigen Werkzeugaufruf zurückgegeben.");
+          throw new Error("OpenRouter hat einen unvollständigen Werkzeugaufruf zurückgegeben.");
         }
         let result;
         try {
@@ -1974,7 +2391,50 @@ async function sendAiMessage(text) {
         chatConversation.push({ role: "tool", tool_call_id: callId, content: result });
       }
       toolRounds += 1;
+      
+      // Continue with non-streaming for tool follow-ups
+      while (toolRounds < 4) {
+        const followUpMessages = [
+          { role: "system", content: systemPrompt },
+          ...chatConversation,
+        ];
+        const message = await requestOpenRouter(followUpMessages, includeTools);
+        const followUpToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+        if (!followUpToolCalls.length) {
+          responseText = typeof message.content === "string" ? message.content.trim() : "";
+          if (responseText) chatConversation.push({ role: "assistant", content: responseText });
+          break;
+        }
+        
+        chatConversation.push({
+          role: "assistant",
+          content: typeof message.content === "string" ? message.content : null,
+          tool_calls: followUpToolCalls,
+        });
+        
+        for (const call of followUpToolCalls) {
+          const name = call?.function?.name;
+          const callId = call?.id;
+          if (!callId || typeof callId !== "string" || typeof name !== "string") {
+            throw new Error("OpenRouter hat einen unvollständigen Werkzeugaufruf zurückgegeben.");
+          }
+          let result;
+          try {
+            const args = JSON.parse(call.function.arguments || "{}");
+            if (toolsExecuted >= 8) throw new Error("Höchstens acht Werkzeugaktionen sind pro Anfrage möglich.");
+            toolsExecuted += 1;
+            result = await runAssistantTool(name, args, includeTools, additionsAllowed);
+            appendChatMessage("tool", `${name}: ${result}`);
+          } catch (error) {
+            result = error instanceof Error ? error.message : "Werkzeugaufruf fehlgeschlagen.";
+            appendChatMessage("tool", `${name || "Unbekanntes Werkzeug"}: ${result}`);
+          }
+          chatConversation.push({ role: "tool", tool_call_id: callId, content: result });
+        }
+        toolRounds += 1;
+      }
     }
+    
     if (!responseText && toolRounds >= 4) {
       responseText = "Die Werkzeugkette wurde nach vier Schritten beendet. Bitte stelle eine gezieltere Anschlussfrage.";
       chatConversation.push({ role: "assistant", content: responseText });
@@ -2316,6 +2776,354 @@ async function runAssistantTool(name, args, toolsEnabled, additionsAllowed) {
     }
     return `Original (${sourceLang}): ${args.text.trim()}\n\nÜbersetzung (${targetLang}): ${translated}`;
   }
+  if (name === "generate_image") {
+    if (typeof args.prompt !== "string" || !args.prompt.trim() || args.prompt.length > 500) {
+      throw new Error("Der Prompt muss 1 bis 500 Zeichen lang sein.");
+    }
+    const width = Math.min(1920, Math.max(256, Number.isInteger(args.width) ? args.width : 1024));
+    const height = Math.min(1920, Math.max(256, Number.isInteger(args.height) ? args.height : 1024));
+    const model = ["flux", "gptimage", "midjourney", "dall-e-3"].includes(args.model) ? args.model : "flux";
+    const seed = Number.isInteger(args.seed) ? args.seed : Math.floor(Math.random() * 1000000);
+    const transparent = args.transparent === true;
+    
+    const params = new URLSearchParams({
+      prompt: args.prompt.trim(),
+      width: String(width),
+      height: String(height),
+      model,
+      seed: String(seed),
+      nologo: "true",
+      private: "true",
+    });
+    if (transparent) params.append("transparent", "true");
+    
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(args.prompt.trim())}?${params.toString()}`;
+    
+    let response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    } catch {
+      throw new Error("Bildgenerierung ist derzeit nicht erreichbar.");
+    }
+    if (!response.ok) throw new Error(`Bildgenerierung antwortete mit HTTP ${response.status}.`);
+    
+    const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const mimeType = blob.type || "image/png";
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+    
+    return `Bild generiert (${width}x${height}, Modell: ${model}):\n${dataUrl}\n\nTipp: Das Bild kann direkt in die Präsentation eingefügt werden (Elemente → Bild).`;
+  }
+  if (name === "generate_slides") {
+    if (typeof args.topic !== "string" || !args.topic.trim() || args.topic.length > 200) {
+      throw new Error("Das Thema muss 1 bis 200 Zeichen lang sein.");
+    }
+    const slideCount = Math.min(15, Math.max(3, Number.isInteger(args.slide_count) ? args.slide_count : 7));
+    const style = ["academic", "business", "creative", "minimal"].includes(args.style) ? args.style : "academic";
+    const includeImages = args.include_images !== false;
+    
+    // Define layout sequences for different styles
+    const layoutSequences = {
+      academic: ["cover", "section", "columns", "columns", "metrics", "comparison", "conclusion"],
+      business: ["cover", "section", "process", "metrics", "roadmap", "team", "conclusion"],
+      creative: ["cover", "mindmap", "funnel", "comparison", "image", "quote", "conclusion"],
+      minimal: ["cover", "section", "columns", "quote", "metrics", "conclusion"],
+    };
+    
+    const sequence = layoutSequences[style] || layoutSequences.academic;
+    const addedSlides = [];
+    
+    for (let i = 0; i < slideCount; i++) {
+      const layoutId = sequence[i % sequence.length];
+      const layout = SLIDE_LAYOUTS.find(l => l.id === layoutId);
+      if (!layout) continue;
+      
+      // Add slide
+      const slideId = crypto.randomUUID();
+      let slide;
+      if (layout.sourceSlideIndex !== undefined) {
+        slide = createStarterSlide(layout, slideId);
+      } else {
+        slide = document.createElement("section");
+        slide.className = `slide slide-layout slide-layout-${layout.id}`;
+        slide.dataset.slide = "";
+        slide.dataset.layoutId = layout.id;
+        slide.id = slideId;
+        slide.hidden = true;
+        const decorations = document.createElement("div");
+        decorations.className = "layout-decorations";
+        decorations.setAttribute("aria-hidden", "true");
+        const main = document.createElement("div");
+        main.className = "layout-canvas";
+        
+        // Layout-specific HTML
+        if (layout.id === "columns") main.innerHTML = '<div class="layout-column layout-column-one"></div><div class="layout-column layout-column-two"></div>';
+        else if (layout.id === "image") main.innerHTML = '<div class="layout-image-placeholder"><span>＋ BILD ÜBER „ELEMENTE“ EINFÜGEN</span></div>';
+        else if (layout.id === "video") main.innerHTML = '<div class="layout-video-placeholder"><span>▶</span><p>VIDEO PER YOUTUBE- ODER VIMEO-LINK EINFÜGEN</p></div>';
+        else if (layout.id === "quote") main.innerHTML = '<span class="layout-quote-mark">“</span>';
+        else if (layout.id === "section") main.innerHTML = '<span class="layout-section-mark">NEUES KAPITEL</span>';
+        else if (layout.id === "timeline") main.innerHTML = '<div class="layout-timeline"><div class="timeline-track"></div><div class="timeline-milestones"></div></div>';
+        else if (layout.id === "process") main.innerHTML = '<div class="layout-process"><div class="process-steps"></div></div>';
+        else if (layout.id === "comparison") main.innerHTML = '<div class="layout-comparison"><div class="comparison-left"></div><div class="comparison-divider"></div><div class="comparison-right"></div></div>';
+        else if (layout.id === "metrics") main.innerHTML = '<div class="layout-metrics"><div class="metrics-grid"></div></div>';
+        else if (layout.id === "team") main.innerHTML = '<div class="layout-team"><div class="team-grid"></div></div>';
+        else if (layout.id === "roadmap") main.innerHTML = '<div class="layout-roadmap"><div class="roadmap-phases"></div></div>';
+        else if (layout.id === "kanban") main.innerHTML = '<div class="layout-kanban"><div class="kanban-columns"></div></div>';
+        else if (layout.id === "mindmap") main.innerHTML = '<div class="layout-mindmap"><div class="mindmap-center"></div><div class="mindmap-branches"></div></div>';
+        else if (layout.id === "funnel") main.innerHTML = '<div class="layout-funnel"><div class="funnel-stages"></div></div>';
+        else if (layout.id === "swot") main.innerHTML = '<div class="layout-swot"><div class="swot-grid"></div></div>';
+        else main.innerHTML = '<div class="layout-title-rule"></div>';
+        
+        const number = document.createElement("span");
+        number.className = "slide-number";
+        number.innerHTML = "00 <i>/ 00</i>";
+        slide.append(decorations, main, number);
+      }
+      
+      stage.append(slide);
+      slides.push(slide);
+      const newIndex = slides.length - 1;
+      
+      // Add default content based on layout
+      const items = [];
+      if (layout.id === "cover") {
+        items.push(
+          { id: crypto.randomUUID(), type: "text", text: args.topic, x: 50, y: 43, width: 76, size: 6.2, color: "#171717", bold: true, align: "center" },
+          { id: crypto.randomUUID(), type: "text", text: `Automatisch generiert · ${new Date().toLocaleDateString("de-DE")}`, x: 50, y: 56, width: 65, size: 2, color: "#57554f", align: "center" }
+        );
+      } else if (layout.id === "section") {
+        items.push(
+          { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 47, width: 76, size: 6.2, color: "#171717", bold: true, align: "center" },
+          { id: crypto.randomUUID(), type: "text", text: layout.subtitle, x: 50, y: 60, width: 65, size: 2, color: "#57554f", align: "center" }
+        );
+      } else if (layout.id === "columns") {
+        items.push(
+          { id: crypto.randomUUID(), type: "text", text: layout.title, x: 50, y: 17, width: 76, size: 3.8, color: "#171717", bold: true },
+          { id: crypto.randomUUID(), type: "text", text: layout.first, x: 26, y: 51, width: 34, size: 3.1, color: "#ef3828", bold: true },
+          { id: crypto.randomUUID(), type: "text", text: layout.second, x: 70, y: 51, width: 34, size: 3.1, color: "#171717", bold: true }
+        );
+      } else {
+        const titleY = layout.id === "cover" ? 43 : layout.id === "section" ? 47 : layout.id === "video" ? 18 : 37;
+        items.push(
+          { id: crypto.randomUUID(), type: "text", text: layout.title, x: 49, y: titleY, width: 76, size: layout.id === "cover" || layout.id === "section" ? 6.2 : 4.4, color: "#171717", bold: true, align: layout.id === "cover" || layout.id === "section" ? "center" : "left" },
+          { id: crypto.randomUUID(), type: "text", text: layout.subtitle, x: layout.id === "cover" || layout.id === "section" ? 50 : 49, y: titleY + 13, width: 65, size: 2, color: "#57554f", align: layout.id === "cover" || layout.id === "section" ? "center" : "left" }
+        );
+      }
+      
+      // Add image placeholder if requested
+      if (includeImages && (layout.id === "image" || layout.id === "cover")) {
+        items.push({
+          id: crypto.randomUUID(),
+          type: "text",
+          text: "📷 Bild-Platzhalter",
+          x: 50,
+          y: 70,
+          width: 40,
+          size: 2,
+          color: "#85837d",
+          align: "center"
+        });
+      }
+      
+      try {
+        localStorage.setItem(`${STORAGE_PREFIX}elements:${newIndex}`, JSON.stringify(items));
+        const specs = JSON.parse(localStorage.getItem(DYNAMIC_SLIDES_KEY) || "[]");
+        specs.push({ id: slideId, layoutId });
+        localStorage.setItem(DYNAMIC_SLIDES_KEY, JSON.stringify(specs));
+      } catch (error) {
+        slide.remove();
+        slides.pop();
+        continue;
+      }
+      
+      createSlideDot(newIndex);
+      addedSlides.push({ index: newIndex, layout: layout.name });
+    }
+    
+    if (addedSlides.length > 0) {
+      setSlide(addedSlides[addedSlides.length - 1].index);
+      renderSlideElements(addedSlides[addedSlides.length - 1].index);
+    }
+    
+    return `${addedSlides.length} Folien zum Thema "${args.topic}" erstellt (Stil: ${style}).\n\nErstellte Folien:\n${addedSlides.map((s, i) => `${i + 1}. ${s.layout} (Folie ${s.index + 1})`).join("\n")}\n\nDu kannst die Folien jetzt bearbeiten, Texte anpassen und Bilder hinzufügen.`;
+  }
+  if (name === "generate_speaker_notes") {
+    const scope = args.scope === "all" ? "all" : "current";
+    const detailLevel = args.detail_level === "brief" ? "brief" : "detailed";
+    const includeTiming = args.include_timing !== false;
+    const includeTransitions = args.include_transitions !== false;
+    
+    const slidesToProcess = scope === "all" ? slides : [slides[activeIndex]];
+    const startIndex = scope === "all" ? 0 : activeIndex;
+    
+    let notes = `SPRECHERNOTIZEN${scope === "all" ? " (ALLE FOLIEN)" : ` (FOLIE ${activeIndex + 1})`}
+`;
+    notes += `Generiert: ${new Date().toLocaleString("de-DE")}
+`;
+    notes += `Präsentation: ${stage.dataset.template || "editorial"} | ${slides.length} Folien
+
+`;
+    
+    slidesToProcess.forEach((slide, i) => {
+      const slideIndex = startIndex + i;
+      const layoutId = slide.dataset.layoutId || "unknown";
+      const transition = slide.dataset.transition || "cut";
+      const text = getCurrentSlideTextFor(slideIndex);
+      const elements = getSlideElements(slideIndex);
+      
+      notes += `--- FOLIE ${slideIndex + 1} ---
+`;
+      notes += `Layout: ${layoutId} | Übergang: ${transition}
+`;
+      
+      if (includeTiming) {
+        const estimatedTime = Math.max(30, Math.min(180, text.length * 0.5 + elements.length * 10));
+        notes += `Geschätzte Zeit: ~${Math.round(estimatedTime / 60)}:${String(estimatedTime % 60).padStart(2, "0")} min
+`;
+      }
+      
+      notes += `INHALT:
+${text || "(leer)"}
+`;
+      
+      if (elements.length > 0) {
+        notes += `ELEMENTE:
+`;
+        elements.forEach((el, idx) => {
+          notes += `  ${idx + 1}. ${el.type} @(${el.x}%,${el.y}%)`;
+          if (el.type === "text") notes += ` "${el.text.slice(0, 60)}"`;
+          if (el.type === "shape") notes += ` ${el.shape}`;
+          if (el.type === "image") notes += ` ${el.alt}`;
+          notes += `
+`;
+        });
+      }
+      
+      if (detailLevel === "detailed") {
+        notes += `HINWEISE:
+`;
+        notes += `  - Sprechen Sie frei, nicht ablesen
+`;
+        notes += `  - Blickkontakt zum Publikum halten
+`;
+        if (elements.some(e => e.type === "image")) {
+          notes += `  - Auf Bilder verweisen: "Wie Sie hier sehen..."
+`;
+        }
+        if (text.includes("?")) {
+          notes += `  - Frage ans Publikum einbauen
+`;
+        }
+        notes += `
+`;
+      }
+      
+      if (includeTransitions && i < slidesToProcess.length - 1) {
+        notes += `ÜBERGANG ZUR NÄCHSTEN FOLIE:
+`;
+        notes += `  "Das führt uns zum nächsten Punkt..."
+`;
+        notes += `
+`;
+      }
+    });
+    
+    if (scope === "all") {
+      const totalTime = slidesToProcess.reduce((sum, slide, i) => {
+        const slideIndex = startIndex + i;
+        const text = getCurrentSlideTextFor(slideIndex);
+        const elements = getSlideElements(slideIndex);
+        return sum + Math.max(30, Math.min(180, text.length * 0.5 + elements.length * 10));
+      }, 0);
+      notes += `GESAMTZEIT: ~${Math.round(totalTime / 60)}:${String(totalTime % 60).padStart(2, "0")} min
+`;
+    }
+    
+    return notes;
+  }
+  if (name === "translate_presentation") {
+    const targetLang = args.target_lang.toLowerCase();
+    if (!/^[a-z]{2}$/.test(targetLang)) {
+      throw new Error("Zielsprache als ISO-639-1 Code angeben (z. B. en, fr, es, it).");
+    }
+    const sourceLang = (typeof args.source_lang === "string" && /^[a-z]{2}$/i.test(args.source_lang)) ? args.source_lang : "auto";
+    const scope = args.scope === "current" ? "current" : "all";
+    
+    const slidesToTranslate = scope === "all" ? slides : [slides[activeIndex]];
+    const startIndex = scope === "all" ? 0 : activeIndex;
+    
+    let results = `ÜBERSETZUNG ${scope === "all" ? "(ALLE FOLIEN)" : `(FOLIE ${activeIndex + 1})`} → ${targetLang.toUpperCase()}
+`;
+    results += `Quellsprache: ${sourceLang} | Zielsprache: ${targetLang}
+
+`;
+    
+    for (let i = 0; i < slidesToTranslate.length; i++) {
+      const slideIndex = startIndex + i;
+      const slide = slidesToTranslate[i];
+      const text = getCurrentSlideTextFor(slideIndex);
+      const elements = getSlideElements(slideIndex);
+      
+      // Collect all text to translate
+      const textsToTranslate = [text];
+      elements.forEach(el => {
+        if (el.type === "text" && el.text) textsToTranslate.push(el.text);
+      });
+      
+      // Translate each text
+      const translatedTexts = [];
+      for (const t of textsToTranslate) {
+        if (!t || !t.trim()) {
+          translatedTexts.push(t);
+          continue;
+        }
+        const url = new URL("https://api.mymemory.translated.net/get");
+        url.search = new URLSearchParams({
+          q: t.trim(),
+          langpair: `${sourceLang}|${targetLang}`,
+        });
+        let response;
+        try {
+          response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        } catch {
+          translatedTexts.push(`[Übersetzung fehlgeschlagen: ${t.slice(0, 50)}...]`);
+          continue;
+        }
+        if (!response.ok) {
+          translatedTexts.push(`[HTTP ${response.status}: ${t.slice(0, 50)}...]`);
+          continue;
+        }
+        const data = await response.json();
+        const translated = data?.responseData?.translatedText;
+        translatedTexts.push(translated || `[Unübersetzt: ${t.slice(0, 50)}...]`);
+      }
+      
+      results += `--- FOLIE ${startIndex + i + 1} ---
+`;
+      results += `Original:
+${textsToTranslate[0] || "(leer)"}
+
+`;
+      results += `Übersetzung:
+${translatedTexts[0] || "(leer)"}
+
+`;
+      
+      if (textsToTranslate.length > 1) {
+        results += `Elemente:
+`;
+        for (let j = 1; j < textsToTranslate.length; j++) {
+          results += `  ${j}. ${textsToTranslate[j]} → ${translatedTexts[j]}
+`;
+        }
+        results += `
+`;
+      }
+    }
+    
+    return results;
+  }
   throw new Error("Dieses Werkzeug ist nicht freigegeben.");
 }
 function getCurrentSlideTextFor(index) {
@@ -2326,6 +3134,84 @@ function getCurrentSlideTextFor(index) {
     .map((item) => item.text)
     .join("\n");
   return `${templateText}\n${customText}`.trim();
+}
+
+// Enhanced AI Context Functions
+function getFullPresentationOutline() {
+  return slides.map((slide, index) => {
+    const layoutId = slide.dataset.layoutId || "unknown";
+    const transition = slide.dataset.transition || "cut";
+    const isStatic = index < STATIC_SLIDE_COUNT;
+    const text = getCurrentSlideTextFor(index);
+    const elements = getSlideElements(index);
+    const elementSummary = elements.map(e => `${e.type}:${e.text?.slice(0, 50) || e.shape || e.alt || "media"}`).join("; ");
+    
+    return {
+      index: index + 1,
+      layoutId,
+      transition,
+      isStatic,
+      text: text.slice(0, 200),
+      elementCount: elements.length,
+      elementSummary: elementSummary.slice(0, 300),
+    };
+  });
+}
+
+function getPresentationMetadata() {
+  return {
+    template: stage.dataset.template || "editorial",
+    totalSlides: slides.length,
+    staticSlides: STATIC_SLIDE_COUNT,
+    dynamicSlides: slides.length - STATIC_SLIDE_COUNT,
+    hasCustomElements: slides.some((_, i) => getSlideElements(i).length > 0),
+    currentSlide: activeIndex + 1,
+  };
+}
+
+function getFullAIContext() {
+  const outline = getFullPresentationOutline();
+  const metadata = getPresentationMetadata();
+  
+  let context = `PRÄSENTATIONS-ÜBERSICHT:\n`;
+  context += `Design: ${metadata.template} | Folien: ${metadata.totalSlides} (${metadata.staticSlides} statisch, ${metadata.dynamicSlides} dynamisch)\n`;
+  context += `Aktuelle Folie: ${metadata.currentSlide}\n\n`;
+  
+  context += `FOLIEN-STRUKTUR:\n`;
+  outline.forEach(slide => {
+    context += `${slide.index}. [${slide.layoutId}] ${slide.transition} - ${slide.text}\n`;
+    if (slide.elementSummary) {
+      context += `   Elemente: ${slide.elementSummary}\n`;
+    }
+  });
+  
+  return context;
+}
+
+function getCurrentSlideContext() {
+  const slide = slides[activeIndex];
+  const layoutId = slide.dataset.layoutId || "unknown";
+  const transition = slide.dataset.transition || "cut";
+  const text = getCurrentSlideTextFor(activeIndex);
+  const elements = getSlideElements(activeIndex);
+  
+  let context = `AKTUELLE FOLIE (${activeIndex + 1}/${slides.length}):\n`;
+  context += `Layout: ${layoutId} | Übergang: ${transition}\n`;
+  context += `Inhalt:\n${text}\n\n`;
+  
+  if (elements.length > 0) {
+    context += `EIGENE ELEMENTE (${elements.length}):\n`;
+    elements.forEach((el, i) => {
+      context += `${i + 1}. ${el.type} @(${el.x}%,${el.y}%) ${el.width}%w`;
+      if (el.type === "text") context += ` "${el.text.slice(0, 80)}"`;
+      if (el.type === "shape") context += ` ${el.shape}`;
+      if (el.type === "image") context += ` ${el.alt}`;
+      if (el.type === "video") context += ` video`;
+      context += `\n`;
+    });
+  }
+  
+  return context;
 }
 
 function applyPresentationDesign(template) {
@@ -2348,7 +3234,7 @@ function applySlideTransition(transition) {
   slides[activeIndex].dataset.transition = transition;
   transitionSelect.value = transition;
   try {
-    localStorage.setItem(`${TRANSITION_STORAGE_PREFIX}${activeIndex}`, transition);
+    localStorage.setItem(`${TRANSITION_STORAGE_KEY}${activeIndex}`, transition);
     showStatus(`Übergang für Folie ${activeIndex + 1} gewählt: ${transitionSelect.selectedOptions[0].textContent}.`);
     return true;
   } catch (error) {
@@ -2772,13 +3658,289 @@ function triggerDownload(bytes, filename, mimeType) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function exportPresentation(format) {
-  if (format === "pdf") {
-    fileMenu.open = false;
-    showStatus("Im Druckdialog „Als PDF speichern“ wählen. Alle Folien werden ausgegeben.");
-    window.print();
-    return;
+async function exportToPDF() {
+  fileMenu.open = false;
+  showStatus("PDF wird generiert...");
+  
+  try {
+    // Dynamically import jsPDF
+    const { jsPDF } = await import("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+    const pdf = new jsPDF({
+      orientation: "landscape",
+      unit: "px",
+      format: [1920, 1080],
+    });
+    
+    const data = getExportData();
+    const slideWidth = 1920;
+    const slideHeight = 1080;
+    
+    for (let i = 0; i < data.length; i++) {
+      const slideData = data[i];
+      
+      if (i > 0) {
+        pdf.addPage([slideWidth, slideHeight], "landscape");
+      }
+      
+      // Render slide to canvas
+      const canvas = document.createElement("canvas");
+      canvas.width = slideWidth * 2; // 2x for quality
+      canvas.height = slideHeight * 2;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(2, 2);
+      
+      // Create a temporary container for rendering
+      const container = document.createElement("div");
+      container.style.width = `${slideWidth}px`;
+      container.style.height = `${slideHeight}px`;
+      container.style.position = "absolute";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      container.style.background = slideData.background || "#eeece5";
+      container.style.color = slideData.color || "#171717";
+      container.style.fontFamily = "Arial, Helvetica, sans-serif";
+      container.style.overflow = "hidden";
+      
+      // Add slide content
+      slideData.elements.forEach(element => {
+        const el = document.createElement(element.type === "text" ? "div" : "div");
+        el.style.position = "absolute";
+        el.style.left = `${element.x}%`;
+        el.style.top = `${element.y}%`;
+        el.style.width = `${element.width}%`;
+        el.style.fontSize = `${element.size * 1.5}rem`;
+        el.style.color = element.color || "#171717";
+        el.style.fontFamily = element.family || "Arial, Helvetica, sans-serif";
+        el.style.textAlign = element.align || "left";
+        el.style.fontWeight = element.bold ? "800" : "400";
+        if (element.type === "text") {
+          el.textContent = element.text;
+        } else if (element.type === "shape") {
+          el.style.background = element.color || "#ef3828";
+          el.style.opacity = "0.85";
+          el.style.height = `${element.height || 18}%`;
+          if (element.shape === "circle") el.style.borderRadius = "50%";
+          if (element.shape === "line") el.style.height = "1%";
+        } else if (element.type === "image") {
+          const img = document.createElement("img");
+          img.src = element.src;
+          img.alt = element.alt || "";
+          img.style.maxHeight = "85%";
+          img.style.objectFit = "contain";
+          container.append(img);
+          return;
+        }
+        container.append(el);
+      });
+      
+      document.body.append(container);
+      
+      // Render to canvas using html2canvas-like approach
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Draw background
+      ctx.fillStyle = slideData.background || "#eeece5";
+      ctx.fillRect(0, 0, slideWidth, slideHeight);
+      
+      // Draw elements
+      slideData.elements.forEach(element => {
+        if (element.type === "text") {
+          ctx.font = `${element.bold ? "bold " : ""}${element.size * 1.5}rem ${element.family || "Arial, Helvetica, sans-serif"}`;
+          ctx.fillStyle = element.color || "#171717";
+          ctx.textAlign = element.align || "left";
+          const x = (element.x / 100) * slideWidth;
+          const y = (element.y / 100) * slideHeight + element.size * 1.5;
+          ctx.fillText(element.text, x, y);
+        } else if (element.type === "shape") {
+          ctx.fillStyle = element.color || "#ef3828";
+          ctx.globalAlpha = 0.85;
+          const x = (element.x / 100) * slideWidth;
+          const y = (element.y / 100) * slideHeight;
+          const w = (element.width / 100) * slideWidth;
+          const h = (element.height / 100) * slideHeight;
+          if (element.shape === "circle") {
+            ctx.beginPath();
+            ctx.arc(x + w/2, y + h/2, Math.min(w, h)/2, 0, 2*Math.PI);
+            ctx.fill();
+          } else if (element.shape === "line") {
+            ctx.fillRect(x, y, w, h);
+          } else {
+            ctx.fillRect(x, y, w, h);
+          }
+          ctx.globalAlpha = 1;
+        }
+      });
+      
+      // Add slide to PDF
+      const imgData = canvas.toDataURL("image/png", 0.9);
+      pdf.addImage(imgData, "PNG", 0, 0, slideWidth, slideHeight);
+      
+      if (i < data.length - 1) {
+        pdf.addPage([slideWidth, slideHeight], "landscape");
+      }
+    }
+    
+    // Save PDF
+    pdf.save("gfs-praesentation.pdf");
+    showStatus("PDF exportiert");
+    exportSaveIndicator.textContent = "PDF heruntergeladen";
+    exportSaveIndicator.dataset.state = "saved";
+  } catch (error) {
+    console.error("PDF-Export fehlgeschlagen:", error);
+    showStatus("PDF-Export fehlgeschlagen: " + error.message);
+    exportSaveIndicator.textContent = "Export fehlgeschlagen";
+    exportSaveIndicator.dataset.state = "error";
   }
+}
+
+async function exportToHTML() {
+  fileMenu.open = false;
+  showStatus("HTML-Präsentation wird generiert...");
+  
+  try {
+    const data = getExportData();
+    
+    // Generate standalone HTML with Reveal.js
+    const html = generateStandaloneHTML(data);
+    
+    const blob = new Blob([html], { type: "text/html" });
+    triggerDownload(blob, "gfs-praesentation.html", "text/html");
+    
+    showStatus("HTML-Präsentation exportiert");
+    exportSaveIndicator.textContent = "HTML heruntergeladen";
+    exportSaveIndicator.dataset.state = "saved";
+  } catch (error) {
+    console.error("HTML-Export fehlgeschlagen:", error);
+    showStatus("HTML-Export fehlgeschlagen: " + error.message);
+    exportSaveIndicator.textContent = "Export fehlgeschlagen";
+    exportSaveIndicator.dataset.state = "error";
+  }
+}
+
+function generateStandaloneHTML(data) {
+  const slidesHTML = data.map((slide, index) => {
+    const elementsHTML = slide.elements.map(element => {
+      if (element.type === "text") {
+        return `<div class="slide-element text" style="
+          left: ${element.x}%;
+          top: ${element.y}%;
+          width: ${element.width}%;
+          font-size: ${element.size * 1.5}rem;
+          color: ${element.color || '#171717'};
+          font-family: ${element.family || 'Arial, Helvetica, sans-serif'};
+          text-align: ${element.align || 'left'};
+          font-weight: ${element.bold ? '800' : '400'};
+        ">${escapeHtml(element.text)}</div>`;
+      } else if (element.type === "shape") {
+        return `<div class="slide-element shape ${element.shape}" style="
+          left: ${element.x}%;
+          top: ${element.y}%;
+          width: ${element.width}%;
+          height: ${element.height || 18}%;
+          background: ${element.color || '#ef3828'};
+          opacity: 0.85;
+        "></div>`;
+      } else if (element.type === "image") {
+        return `<img class="slide-element image" src="${element.src}" alt="${escapeHtml(element.alt || '')}" style="
+          left: ${element.x}%;
+          top: ${element.y}%;
+          width: ${element.width}%;
+          max-height: 85%;
+          object-fit: contain;
+        ">)`;
+      }
+      return "";
+    }).join("");
+    
+    return `<section class="slide" data-slide="${index}">
+      <div class="slide-content">${elementsHTML}</div>
+    </section>`;
+  }).join("");
+  
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GFS Präsentation</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.5.0/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.5.0/dist/theme/white.css">
+  <style>
+    .slide { width: 100%; height: 100%; position: relative; }
+    .slide-element { position: absolute; box-sizing: border-box; }
+    .slide-element.shape.circle { border-radius: 50%; }
+    .slide-element.shape.line { height: 2px !important; }
+    .slide-element.image { max-height: 85%; object-fit: contain; }
+    .reveal .slides { text-align: left; }
+    .reveal .slides section { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      ${data.map((slide, index) => {
+        const elementsHTML = slide.elements.map(element => {
+          if (element.type === "text") {
+            return `<div class="slide-element text" style="
+              left: ${element.x}%;
+              top: ${element.y}%;
+              width: ${element.width}%;
+              font-size: ${element.size * 1.5}rem;
+              color: ${element.color || '#171717'};
+              font-family: ${element.family || 'Arial, Helvetica, sans-serif'};
+              text-align: ${element.align || 'left'};
+              font-weight: ${element.bold ? '800' : '400'};
+            ">${escapeHtml(element.text)}</div>`;
+          } else if (element.type === "shape") {
+            return `<div class="slide-element shape ${element.shape}" style="
+              left: ${element.x}%;
+              top: ${element.y}%;
+              width: ${element.width}%;
+              height: ${element.height || 18}%;
+              background: ${element.color || '#ef3828'};
+              opacity: 0.85;
+            "></div>`;
+          } else if (element.type === "image") {
+            return `<img class="slide-element image" src="${element.src}" alt="${escapeHtml(element.alt || '')}" style="
+              left: ${element.x}%;
+              top: ${element.y}%;
+              width: ${element.width}%;
+              max-height: 85%;
+              object-fit: contain;
+            ">)`;
+          }
+          return "";
+        }).join("");
+        return `<section data-slide="${index}"><div class="slide-content">${elementsHTML}</div></section>`;
+      }).join("")}
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.5.0/dist/reveal.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      slideNumber: true,
+      controls: true,
+      progress: true,
+      transition: 'slide',
+      width: 1920,
+      height: 1080,
+      margin: 0.04,
+      minScale: 0.2,
+      maxScale: 2.0,
+    });
+  </script>
+</body>
+</html>`;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function exportPresentation(format) {
 
   try {
     const data = getExportData();
@@ -3088,7 +4250,7 @@ function loadSavedText() {
 
 function getSlideTransition(index) {
   try {
-    const savedTransition = localStorage.getItem(`${TRANSITION_STORAGE_PREFIX}${index}`);
+    const savedTransition = localStorage.getItem(`${TRANSITION_STORAGE_KEY}${index}`);
     const isAvailable = Array.from(transitionSelect.options).some((option) => option.value === savedTransition);
     return isAvailable ? savedTransition : "cut";
   } catch (error) {
@@ -3179,6 +4341,12 @@ loadSavedSettings();
 initializeModelViewer();
 slides.forEach((slide, index) => renderSlideElements(index));
 setSlide(0);
+
+function initializeAiAssistant() {
+  updateOpenRouterAssistantState();
+  if (!getStoredOpenRouterApiKey()) openOpenRouterSettings();
+}
+
 initializeAiAssistant();
 
 previousButton.addEventListener("click", () => setSlide(activeIndex - 1));
@@ -3228,14 +4396,14 @@ deleteSlideButton.addEventListener("click", () => {
     const lastIndex = slides.length - 1;
     for (let index = deletedIndex + 1; index <= lastIndex; index += 1) {
       const elements = localStorage.getItem(`${STORAGE_PREFIX}elements:${index}`);
-      const transition = localStorage.getItem(`${TRANSITION_STORAGE_PREFIX}${index}`);
+      const transition = localStorage.getItem(`${TRANSITION_STORAGE_KEY}${index}`);
       if (elements !== null) localStorage.setItem(`${STORAGE_PREFIX}elements:${index - 1}`, elements);
       else localStorage.removeItem(`${STORAGE_PREFIX}elements:${index - 1}`);
-      if (transition !== null) localStorage.setItem(`${TRANSITION_STORAGE_PREFIX}${index - 1}`, transition);
-      else localStorage.removeItem(`${TRANSITION_STORAGE_PREFIX}${index - 1}`);
+      if (transition !== null) localStorage.setItem(`${TRANSITION_STORAGE_KEY}${index - 1}`, transition);
+      else localStorage.removeItem(`${TRANSITION_STORAGE_KEY}${index - 1}`);
     }
     localStorage.removeItem(`${STORAGE_PREFIX}elements:${lastIndex}`);
-    localStorage.removeItem(`${TRANSITION_STORAGE_PREFIX}${lastIndex}`);
+    localStorage.removeItem(`${TRANSITION_STORAGE_KEY}${lastIndex}`);
     localStorage.setItem(DYNAMIC_SLIDES_KEY, JSON.stringify(specs));
     const removedSlide = slides[deletedIndex];
     removedSlide.querySelectorAll("[data-editable]").forEach((element) => {
@@ -3299,9 +4467,9 @@ duplicateSlideButton.addEventListener("click", () => {
   localStorage.setItem(`${STORAGE_PREFIX}elements:${activeIndex + 1}`, JSON.stringify(newElements));
   
   // Copy transition
-  const transition = localStorage.getItem(`${TRANSITION_STORAGE_PREFIX}${activeIndex}`);
+  const transition = localStorage.getItem(`${TRANSITION_STORAGE_KEY}${activeIndex}`);
   if (transition) {
-    localStorage.setItem(`${TRANSITION_STORAGE_PREFIX}${activeIndex + 1}`, transition);
+    localStorage.setItem(`${TRANSITION_STORAGE_KEY}${activeIndex + 1}`, transition);
   }
   
   // Update specs
@@ -3580,6 +4748,10 @@ transitionSelect.addEventListener("change", () => {
 templateSelect.addEventListener("change", () => {
   applyPresentationDesign(templateSelect.value);
 });
+
+if (masterEditorButton) {
+  masterEditorButton.addEventListener("click", openMasterEditor);
+}
 
 editableElements.forEach((element) => {
   registerEditableElement(element);
