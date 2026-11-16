@@ -1207,7 +1207,7 @@ select:focus-visible {
 .stage {
   position: relative;
   width: 100%;
-  max-width: 1920px;
+  max-width: 100%;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--paper);
