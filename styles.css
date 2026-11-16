@@ -288,7 +288,8 @@ select:focus-visible {
 
 .presentation {
   display: flex;
-  width: min(100%, 1800px);
+  width: 100%;
+  max-width: 1920px;
   flex: 1;
   flex-direction: column;
   justify-content: space-between;
