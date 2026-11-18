@@ -274,6 +274,7 @@ const textAlignRow = document.querySelector("#text-align-row");
 const elementBoldButton = document.querySelector("#element-bold-button");
 const boldRow = document.querySelector("#bold-row");
 const elementWidth = document.querySelector("#element-width");
+const elementHeight = document.querySelector("#element-height");
 const deleteElementButton = document.querySelector("#delete-element-button");
 const addTextButton = document.querySelector("#add-text-button");
 const addShapeButton = document.querySelector("#add-shape-button");
@@ -1180,11 +1181,14 @@ function renderElementListInternal() {
     elementColor.value = selected.color || "#ef3828";
     elementFontSize.value = String(selected.size || 3);
     elementWidth.value = String(selected.width);
+    if (elementHeight) elementHeight.value = String(selected.height || (selected.type === "video" ? Math.round(selected.width * 9 / 16) : 18));
     fontSizeRow.hidden = selected.type !== "text";
     shapeTypeRow.hidden = selected.type !== "shape";
     fontFamilyRow.hidden = selected.type !== "text";
     textAlignRow.hidden = selected.type !== "text";
     boldRow.hidden = selected.type !== "text";
+    const heightRow = document.querySelector("#height-row");
+    if (heightRow) heightRow.hidden = !["shape", "image", "video"].includes(selected.type);
     if (selected.type === "shape") elementShapeType.value = selected.shape;
     if (selected.type === "text") {
       elementFontFamily.value = selected.family || "Arial, Helvetica, sans-serif";
@@ -1479,6 +1483,7 @@ function updateSelectedElement(update) {
     if (update.color) node.style.setProperty("--element-color", update.color);
     if (update.size) node.style.setProperty("--element-size", update.size);
     if (update.width) node.style.width = `${update.width}%`;
+    if (update.height) node.style.height = `${update.height}%`;
     if (update.shape) {
       node.classList.remove("custom-element-rectangle", "custom-element-circle", "custom-element-line");
       node.classList.add(`custom-element-${update.shape}`);
@@ -4937,6 +4942,7 @@ elementBoldButton.addEventListener("click", () => {
   if (selected?.type === "text") updateSelectedElement({ bold: !selected.bold });
 });
 elementWidth.addEventListener("input", () => updateSelectedElement({ width: Number(elementWidth.value) }));
+if (elementHeight) elementHeight.addEventListener("input", () => updateSelectedElement({ height: Number(elementHeight.value) }));
 deleteElementButton.addEventListener("click", deleteSelectedElement);
 
 // Group/Ungroup
