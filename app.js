@@ -288,6 +288,12 @@ const saveIndicator = document.querySelector("#save-indicator");
 const exportProjectButton = document.querySelector("#export-project-button");
 const importProjectButton = document.querySelector("#import-project-button");
 const projectFileInput = document.querySelector("#project-file-input");
+const importPptxButton = document.querySelector("#import-pptx-button");
+const importPptxInput = document.querySelector("#import-pptx-input");
+const importOdpButton = document.querySelector("#import-odp-button");
+const importOdpInput = document.querySelector("#import-odp-input");
+const importPdfButton = document.querySelector("#import-pdf-button");
+const importPdfInput = document.querySelector("#import-pdf-input");
 const exportFormatButtons = Array.from(document.querySelectorAll("[data-export-format]"));
 const fileMenu = document.querySelector("#file-menu");
 const exportSaveIndicator = document.querySelector("#export-save-indicator");
@@ -3403,7 +3409,9 @@ function getExportSlideData(slide, index, exportStage) {
   const bounds = exportStage.getBoundingClientRect();
   const background = colorToHex(getComputedStyle(slide).backgroundColor, "#eeece5");
   const items = [];
-  slide.querySelectorAll(".shape, .layout-column, .layout-image-placeholder, .layout-video-placeholder, .custom-element-shape").forEach((node) => {
+  
+  // Capture layout decorations (template-specific visual elements)
+  slide.querySelectorAll(".layout-decorations > *").forEach((node) => {
     const rect = node.getBoundingClientRect();
     const style = getComputedStyle(node);
     const fill = colorToHex(style.backgroundColor, "");
@@ -3416,6 +3424,96 @@ function getExportSlideData(slide, index, exportStage) {
       width: rect.width / bounds.width,
       height: rect.height / bounds.height,
       fill,
+      shape: node.classList.contains("circle") ? "circle" : 
+             node.classList.contains("line") ? "line" : "rectangle",
+    });
+  });
+
+  // Capture layout columns
+  slide.querySelectorAll(".layout-column, .layout-column-one, .layout-column-two").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: "rectangle",
+    });
+  });
+
+  // Capture layout placeholders (image, video)
+  slide.querySelectorAll(".layout-image-placeholder, .layout-video-placeholder").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: "rectangle",
+    });
+  });
+
+  // Capture custom elements (shapes, sticky notes, arrows, icons, charts)
+  slide.querySelectorAll(".custom-element-shape, .custom-element-sticky, .custom-element-arrow, .custom-element-icon, .custom-element-chart").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    
+    let shapeType = "rectangle";
+    if (node.classList.contains("custom-element-shape")) {
+      if (node.classList.contains("circle")) shapeType = "circle";
+      else if (node.classList.contains("line")) shapeType = "line";
+    } else if (node.classList.contains("custom-element-sticky")) {
+      shapeType = "rectangle";
+    } else if (node.classList.contains("custom-element-arrow")) {
+      shapeType = "line";
+    } else if (node.classList.contains("custom-element-icon")) {
+      shapeType = "circle";
+    } else if (node.classList.contains("custom-element-chart")) {
+      shapeType = "rectangle";
+    }
+    
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: shapeType,
+    });
+  });
+
+  // Capture all shapes (including basic shapes)
+  slide.querySelectorAll(".shape:not(.layout-decorations > *):not(.layout-column):not(.layout-column-one):not(.layout-column-two):not(.layout-image-placeholder):not(.layout-video-placeholder):not(.custom-element-shape):not(.custom-element-sticky):not(.custom-element-arrow):not(.custom-element-icon):not(.custom-element-chart)").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: node.classList.contains("circle") ? "circle" : 
+             node.classList.contains("line") ? "line" : "rectangle",
     });
   });
 
@@ -3569,13 +3667,25 @@ function pptxTextShape(item, shapeId) {
   const y = Math.round(item.y * 6858000);
   const cx = Math.max(1, Math.round(item.width * 12192000));
   const cy = Math.max(1, Math.round(item.height * 6858000));
+  
+  // Determine shape geometry
+  let prstGeom = "rect";
+  if (item.shape === "circle") prstGeom = "ellipse";
+  else if (item.shape === "line") prstGeom = "rect"; // line is a thin rect
+  
   const paragraphs = item.type === "shape"
     ? ""
     : item.text.split("\n").map((line) => `<a:p><a:pPr algn="${item.align}"/><a:r><a:rPr lang="de-DE" sz="${Math.round(item.fontSize * 100)}"${item.bold ? ' b="1"' : ""}><a:solidFill><a:srgbClr val="${item.color.slice(1)}"/></a:solidFill><a:latin typeface="${escapeXml(item.fontFamily)}"/></a:rPr><a:t xml:space="preserve">${escapeXml(line)}</a:t></a:r><a:endParaRPr lang="de-DE"/></a:p>`).join("");
+  
   const fill = item.type === "shape"
     ? `<a:solidFill><a:srgbClr val="${item.fill.slice(1)}"/></a:solidFill>`
     : "<a:noFill/>";
-  return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${item.type === "shape" ? "Form" : `Text ${shapeId}`}"/><p:cNvSpPr txBox="${item.type === "text" ? 1 : 0}"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${fill}<a:ln><a:noFill/></a:ln></p:spPr>${item.type === "text" ? `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" tIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paragraphs}</p:txBody>` : ""}</p:sp>`;
+  
+  // For line shapes, make them thin
+  const lineHeight = item.shape === "line" ? Math.max(1, Math.round(cy * 0.02)) : cy;
+  const lineY = item.shape === "line" ? y + Math.round(cy / 2) - Math.round(lineHeight / 2) : y;
+  
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${item.type === "shape" ? "Form" : `Text ${shapeId}`}"/><p:cNvSpPr txBox="${item.type === "text" ? 1 : 0}"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${item.shape === "line" ? lineY : y}"/><a:ext cx="${cx}" cy="${item.shape === "line" ? lineHeight : cy}"/></a:xfrm><a:prstGeom prst="${prstGeom}"><a:avLst/></a:prstGeom>${fill}<a:ln><a:noFill/></a:ln></p:spPr>${item.type === "text" ? `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" tIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paragraphs}</p:txBody>` : ""}</p:sp>`;
 }
 
 function createPptx(slideData) {
@@ -3609,8 +3719,19 @@ function odpTextFrame(item, pageIndex, itemIndex) {
   const y = (item.y * 19.05).toFixed(3);
   const width = Math.max(0.1, item.width * 33.867).toFixed(3);
   const height = Math.max(0.1, item.height * 19.05).toFixed(3);
+  
   if (item.type === "shape") {
-    return `<draw:rect draw:style-name="shape${item.fill.slice(1)}" svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"/>`;
+    const shapeStyle = `shape${item.fill.slice(1)}`;
+    if (item.shape === "circle") {
+      return `<draw:ellipse draw:style-name="${shapeStyle}" svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"/>`;
+    } else if (item.shape === "line") {
+      // Line is a thin rectangle
+      const lineHeight = Math.max(0.05, height * 0.02).toFixed(3);
+      const lineY = (parseFloat(y) + parseFloat(height) / 2 - parseFloat(lineHeight) / 2).toFixed(3);
+      return `<draw:rect draw:style-name="${shapeStyle}" svg:x="${x}cm" svg:y="${lineY}cm" svg:width="${width}cm" svg:height="${lineHeight}cm"/>`;
+    } else {
+      return `<draw:rect draw:style-name="${shapeStyle}" svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"/>`;
+    }
   }
   const styleName = `t${pageIndex}_${itemIndex}`;
   const paragraphs = item.text.split("\n").map((line) => `<text:p text:style-name="p${styleName}"><text:span text:style-name="${styleName}">${escapeXml(line)}</text:span></text:p>`).join("");
@@ -4041,6 +4162,300 @@ async function importProject(file) {
     showStatus(error instanceof Error ? error.message : "Das Projekt konnte nicht geladen werden.");
   } finally {
     projectFileInput.value = "";
+  }
+}
+
+// Import .pptx files
+async function importPptx(file) {
+  try {
+    showStatus("PPTX wird importiert...");
+    const arrayBuffer = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(arrayBuffer);
+    
+    // Extract slide data from PPTX
+    const slideFiles = Object.keys(zip.files).filter(name => 
+      name.startsWith("ppt/slides/slide") && name.endsWith(".xml")
+    ).sort((a, b) => {
+      const numA = parseInt(a.match(/slide(\d+)\.xml/)[1]);
+      const numB = parseInt(b.match(/slide(\d+)\.xml/)[1]);
+      return numA - numB;
+    });
+    
+    if (slideFiles.length === 0) {
+      throw new Error("Keine Folien in der PPTX-Datei gefunden.");
+    }
+    
+    // Parse presentation.xml to get slide size
+    const presXml = await zip.file("ppt/presentation.xml")?.async("text");
+    let slideWidth = 12192000; // default 16:9 in EMU
+    let slideHeight = 6858000;
+    if (presXml) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(presXml, "application/xml");
+      const sldSz = doc.querySelector("p\\:sldSz, sldSz");
+      if (sldSz) {
+        slideWidth = parseInt(sldSz.getAttribute("cx")) || slideWidth;
+        slideHeight = parseInt(sldSz.getAttribute("cy")) || slideHeight;
+      }
+    }
+    
+    // Clear existing slides (keep static ones)
+    const staticCount = STATIC_SLIDE_COUNT;
+    for (let i = slides.length - 1; i >= staticCount; i--) {
+      deleteSlide(i);
+    }
+    
+    // Import each slide
+    for (const slideFile of slideFiles) {
+      const xmlText = await zip.file(slideFile)?.async("text");
+      if (!xmlText) continue;
+      
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlText, "application/xml");
+      
+      // Extract shapes and text
+      const shapes = doc.querySelectorAll("p\\:sp, sp");
+      const items = [];
+      
+      shapes.forEach((shape, idx) => {
+        const xfrm = shape.querySelector("a\\:xfrm, xfrm");
+        const off = xfrm?.querySelector("a\\:off, off");
+        const ext = xfrm?.querySelector("a\\:ext, ext");
+        const txBody = shape.querySelector("p\\:txBody, txBody");
+        const spPr = shape.querySelector("p\\:spPr, spPr");
+        const solidFill = spPr?.querySelector("a\\:solidFill, solidFill");
+        const srgbClr = solidFill?.querySelector("a\\:srgbClr, srgbClr");
+        
+        if (!off || !ext) return;
+        
+        const x = parseInt(off.getAttribute("x")) || 0;
+        const y = parseInt(off.getAttribute("y")) || 0;
+        const cx = parseInt(ext.getAttribute("cx")) || 0;
+        const cy = parseInt(ext.getAttribute("cy")) || 0;
+        
+        const fillColor = srgbClr ? `#${srgbClr.getAttribute("val")}` : "#ef3828";
+        
+        // Check if it's a text box
+        if (txBody) {
+          const paragraphs = txBody.querySelectorAll("a\\:p, p");
+          let text = "";
+          let fontSize = 18;
+          let fontFamily = "Arial";
+          let bold = false;
+          let color = "#171717";
+          let align = "l";
+          
+          paragraphs.forEach(p => {
+            const r = p.querySelector("a\\:r, r");
+            if (r) {
+              const rPr = r.querySelector("a\\:rPr, rPr");
+              if (rPr) {
+                fontSize = parseInt(rPr.getAttribute("sz")) / 100 || fontSize;
+                fontFamily = rPr.querySelector("a\\:latin, latin")?.getAttribute("typeface") || fontFamily;
+                bold = rPr.getAttribute("b") === "1" || rPr.querySelector("a\\:b, b") !== null;
+                const clr = rPr.querySelector("a\\:solidFill a\\:srgbClr, solidFill srgbClr");
+                if (clr) color = `#${clr.getAttribute("val")}`;
+              }
+              const t = r.querySelector("a\\:t, t");
+              if (t) text += t.textContent + "\n";
+            }
+            const pPr = p.querySelector("a\\:pPr, pPr");
+            if (pPr) {
+              align = pPr.getAttribute("algn") === "ctr" ? "ctr" : pPr.getAttribute("algn") === "r" ? "r" : "l";
+            }
+          });
+          
+          if (text.trim()) {
+            items.push({
+              type: "text",
+              text: text.trim(),
+              x: (x / slideWidth) * 100,
+              y: (y / slideHeight) * 100,
+              width: (cx / slideWidth) * 100,
+              height: (cy / slideHeight) * 100,
+              color,
+              fontSize,
+              fontFamily,
+              bold,
+              align,
+            });
+          }
+        } else {
+          // It's a shape
+          items.push({
+            type: "shape",
+            shape: "rectangle",
+            x: (x / slideWidth) * 100,
+            y: (y / slideHeight) * 100,
+            width: (cx / slideWidth) * 100,
+            height: (cy / slideHeight) * 100,
+            fill: fillColor,
+          });
+        }
+      });
+      
+      if (items.length > 0) {
+        addSlideFromLayout("columns"); // Use a basic layout
+        const newIndex = slides.length - 1;
+        localStorage.setItem(`${STORAGE_PREFIX}elements:${newIndex}`, JSON.stringify(items));
+        renderSlideElements(newIndex);
+      }
+    }
+    
+    showStatus(`${slideFiles.length} Folien aus PPTX importiert.`);
+  } catch (error) {
+    console.error("PPTX-Import fehlgeschlagen:", error);
+    showStatus("PPTX-Import fehlgeschlagen: " + error.message);
+  } finally {
+    importPptxInput.value = "";
+  }
+}
+
+// Import .odp files
+async function importOdp(file) {
+  try {
+    showStatus("ODP wird importiert...");
+    const arrayBuffer = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(arrayBuffer);
+    
+    const contentXml = await zip.file("content.xml")?.async("text");
+    if (!contentXml) throw new Error("Keine content.xml in der ODP-Datei gefunden.");
+    
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(contentXml, "application/xml");
+    
+    // Get pages
+    const pages = doc.querySelectorAll("draw\\:page, page");
+    if (pages.length === 0) throw new Error("Keine Folien in der ODP-Datei gefunden.");
+    
+    // Clear existing slides (keep static ones)
+    const staticCount = STATIC_SLIDE_COUNT;
+    for (let i = slides.length - 1; i >= staticCount; i--) {
+      deleteSlide(i);
+    }
+    
+    // Import each page
+    for (const page of pages) {
+      const items = [];
+      
+      // Get shapes
+      const shapes = page.querySelectorAll("draw\\:rect, draw\\:ellipse, draw\\:frame, rect, ellipse, frame");
+      shapes.forEach((shape, idx) => {
+        const x = parseFloat(shape.getAttribute("svg:x") || "0");
+        const y = parseFloat(shape.getAttribute("svg:y") || "0");
+        const width = parseFloat(shape.getAttribute("svg:width") || "0");
+        const height = parseFloat(shape.getAttribute("svg:height") || "0");
+        
+        const styleName = shape.getAttribute("draw:style-name") || "";
+        const fillColor = "#ef3828"; // Default
+        
+        // Try to get text content
+        const textBox = shape.querySelector("draw\\:text-box, text-box");
+        if (textBox) {
+          const paragraphs = textBox.querySelectorAll("text\\:p, p");
+          let text = "";
+          paragraphs.forEach(p => {
+            const spans = p.querySelectorAll("text\\:span, span");
+            spans.forEach(span => {
+              text += span.textContent + "\n";
+            });
+          });
+          
+          if (text.trim()) {
+            items.push({
+              type: "text",
+              text: text.trim(),
+              x: (x / 33.867),
+              y: (y / 19.05),
+              width: (width / 33.867),
+              height: (height / 19.05),
+              color: "#171717",
+              fontSize: 18,
+              fontFamily: "Arial",
+              bold: false,
+              align: "l",
+            });
+          }
+        } else {
+          // It's a shape
+          items.push({
+            type: "shape",
+            shape: shape.tagName.includes("ellipse") ? "circle" : "rectangle",
+            x: (x / 33.867),
+            y: (y / 19.05),
+            width: (width / 33.867),
+            height: (height / 19.05),
+            fill: fillColor,
+          });
+        }
+      });
+      
+      if (items.length > 0) {
+        addSlideFromLayout("columns");
+        const newIndex = slides.length - 1;
+        localStorage.setItem(`${STORAGE_PREFIX}elements:${newIndex}`, JSON.stringify(items));
+        renderSlideElements(newIndex);
+      }
+    }
+    
+    showStatus(`${pages.length} Folien aus ODP importiert.`);
+  } catch (error) {
+    console.error("ODP-Import fehlgeschlagen:", error);
+    showStatus("ODP-Import fehlgeschlagen: " + error.message);
+  } finally {
+    importOdpInput.value = "";
+  }
+}
+
+// Import .pdf files (basic - extracts text only)
+async function importPdf(file) {
+  try {
+    showStatus("PDF wird importiert (nur Text)...");
+    const arrayBuffer = await file.arrayBuffer();
+    
+    // Use PDF.js to extract text
+    const pdfjsLib = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.mjs");
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    if (pdf.numPages === 0) throw new Error("Keine Seiten in der PDF-Datei gefunden.");
+    
+    // Clear existing slides (keep static ones)
+    const staticCount = STATIC_SLIDE_COUNT;
+    for (let i = slides.length - 1; i >= staticCount; i--) {
+      deleteSlide(i);
+    }
+    
+    // Import each page
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const text = textContent.items.map(item => item.str).join(" ");
+      
+      if (text.trim()) {
+        addSlideFromLayout("columns");
+        const newIndex = slides.length - 1;
+        const items = [{
+          type: "text",
+          text: text.trim(),
+          x: 50,
+          y: 50,
+          width: 80,
+          size: 3,
+          color: "#171717",
+          bold: false,
+          align: "left",
+        }];
+        localStorage.setItem(`${STORAGE_PREFIX}elements:${newIndex}`, JSON.stringify(items));
+        renderSlideElements(newIndex);
+      }
+    }
+    
+    showStatus(`${pdf.numPages} Seiten aus PDF importiert (nur Text).`);
+  } catch (error) {
+    console.error("PDF-Import fehlgeschlagen:", error);
+    showStatus("PDF-Import fehlgeschlagen: " + error.message);
+  } finally {
+    importPdfInput.value = "";
   }
 }
 
@@ -4546,6 +4961,34 @@ projectFileInput.addEventListener("change", () => {
   const [file] = projectFileInput.files;
   if (file) void importProject(file);
 });
+
+// Import PPTX
+if (importPptxButton && importPptxInput) {
+  importPptxButton.addEventListener("click", () => importPptxInput.click());
+  importPptxInput.addEventListener("change", () => {
+    const [file] = importPptxInput.files;
+    if (file) void importPptx(file);
+  });
+}
+
+// Import ODP
+if (importOdpButton && importOdpInput) {
+  importOdpButton.addEventListener("click", () => importOdpInput.click());
+  importOdpInput.addEventListener("change", () => {
+    const [file] = importOdpInput.files;
+    if (file) void importOdp(file);
+  });
+}
+
+// Import PDF
+if (importPdfButton && importPdfInput) {
+  importPdfButton.addEventListener("click", () => importPdfInput.click());
+  importPdfInput.addEventListener("change", () => {
+    const [file] = importPdfInput.files;
+    if (file) void importPdf(file);
+  });
+}
+
 presentButton.addEventListener("click", () => void togglePresentationMode());
 resetButton.addEventListener("click", () => {
   if (!window.confirm("Texte, eigene Elemente, Vorlagen und alle Einstellungen zurücksetzen?")) return;

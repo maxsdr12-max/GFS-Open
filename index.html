@@ -11,6 +11,7 @@
     <title>GFS Studio – Präsentationsvorlage</title>
     <link rel="stylesheet" href="./styles.css?v=10" />
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.1.0/model-viewer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script type="module" src="./app.js?v=10"></script>
   </head>
   <body>
@@ -54,6 +55,15 @@
               <button type="button" data-export-format="otp"><strong>OTP</strong><span>Impress-Vorlage</span></button>
               <button type="button" data-export-format="pdf"><strong>PDF</strong><span>Druckdialog öffnen · Als PDF speichern</span></button>
               <p class="file-menu-note">Texte und Grundformen bleiben editierbar; Animationen und Design-Details werden vereinfacht. Bilder, Videos und 3D-Modelle erscheinen als Platzhalter. Für ältere .ppt-Dateien: PPTX in PowerPoint öffnen und über „Speichern unter“ konvertieren.</p>
+              <hr style="margin: 12px 0; border-color: #44433f;">
+              <p class="file-menu-title">PRÄSENTATION IMPORTIEREN</p>
+              <button type="button" id="import-pptx-button" class="import-button"><strong>PPTX</strong><span>PowerPoint importieren</span></button>
+              <button type="button" id="import-odp-button" class="import-button"><strong>ODP</strong><span>OpenDocument importieren</span></button>
+              <button type="button" id="import-pdf-button" class="import-button"><strong>PDF</strong><span>PDF importieren (nur Text)</span></button>
+              <input id="import-pptx-input" type="file" accept=".pptx,.ppt" hidden />
+              <input id="import-odp-input" type="file" accept=".odp" hidden />
+              <input id="import-pdf-input" type="file" accept=".pdf" hidden />
+              <p class="file-menu-note">Importiert Folien, Texte und Formen. Animationen, komplexe Layouts und eingebettete Medien werden nicht übernommen.</p>
             </div>
           </details>
           <span class="toolbar-separator" aria-hidden="true"></span>

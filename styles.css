@@ -360,7 +360,8 @@ select:focus-visible {
   letter-spacing: 1px;
 }
 
-.file-menu-popover > button {
+.file-menu-popover > button,
+.file-menu-popover > .import-button {
   display: grid;
   min-height: 40px;
   grid-template-columns: 48px 1fr;
@@ -373,17 +374,20 @@ select:focus-visible {
   cursor: pointer;
 }
 
-.file-menu-popover > button:hover {
+.file-menu-popover > button:hover,
+.file-menu-popover > .import-button:hover {
   border-color: #4a4944;
   background: #292927;
 }
 
-.file-menu-popover > button strong {
+.file-menu-popover > button strong,
+.file-menu-popover > .import-button strong {
   color: var(--red);
   font-size: 11px;
 }
 
-.file-menu-popover > button span {
+.file-menu-popover > button span,
+.file-menu-popover > .import-button span {
   color: #c3c0b9;
   font-size: 10px;
 }
