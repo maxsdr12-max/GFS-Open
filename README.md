@@ -15,12 +15,12 @@ Dann <http://localhost:8000> im Browser öffnen.
 ## Anpassen und präsentieren
 
 - **Texte bearbeiten** wählen und einen Text direkt anklicken. Die Änderungen werden lokal im Browser gespeichert.
-- Mit **Elemente** öffnet sich das Menü für eigene Texte, Formen und Bilder. Elemente lassen sich auf der Folie ziehen, über die Liste auswählen, formatieren und löschen; Texte per Doppelklick ändern. Eingebettete Videos lassen sich am Griff **Video verschieben** bewegen und über den Griff unten rechts proportional skalieren. Formen können Rechtecke, Kreise oder Linien sein.
+- Mit **Elemente** öffnet sich das Menü für eigene Texte, Formen und Bilder. Elemente lassen sich auf der Folie ziehen, über die Liste auswählen, formatieren und löschen; Texte per Doppelklick ändern. Eingebettete Videos lassen sich am Griff **Video verschieben** bewegen. Über den Griff unten rechts lassen sich Breite und Höhe jedes Elements frei und unabhängig voneinander ändern; dieselben Werte stellen die Regler **Breite** und **Höhe** im Elemente-Menü ein. Formen können Rechtecke, Kreise oder Linien sein.
 - Über **KI & Folien → Folien** einzelne Layouts wie Titel, Kapiteltrenner, Zitat, zwei Spalten, Bild, Video oder Fazit ergänzen. Die sieben Startfolien (Titel, Leitfrage, Fahrplan, Kernideen, Aha-Moment, Fazit und Fragerunde) sind dort ebenfalls als eigene, bearbeitbare Vorlagen verfügbar. Jede Folie kann einzeln hinzugefügt und wieder gelöscht werden.
 - Texte eigener Folien lassen sich verschieben, in Farbe, Größe, Schrift, Ausrichtung und Fettschrift anpassen.
 - Im **Elemente**-Menü können YouTube- und Vimeo-Links als Video-Element eingebettet werden. Die Videowiedergabe lädt Inhalte vom jeweiligen Anbieter.
 - Änderungen werden automatisch im Browser gespeichert. **Projekt sichern** lädt eine JSON-Sicherung herunter; über **Projekt laden** kann sie später wiederhergestellt werden.
-- Über **Datei exportieren** oder die Schnellaktionen unter der Folie als ODP, OTP oder PPTX exportieren. Text und einfache Formen werden als bearbeitbare Präsentationselemente übernommen; Animationen und aufwendige Design-Details werden vereinfacht, Bilder, Videos und 3D-Modelle durch beschriftete Platzhalter ersetzt. Für PDF den Druckdialog öffnen und **Als PDF speichern** wählen. Das ältere binäre `.ppt`-Format wird von PowerPoint erzeugt: PPTX öffnen und dort **Speichern unter → PowerPoint 97–2003 (.ppt)** wählen.
+- Über **Datei exportieren** oder die Schnellaktionen unter der Folie als ODP, OTP oder PPTX exportieren. Texte, Formen, Dekorationen und eigene Bilder werden an ihrer tatsächlichen Position und Größe als bearbeitbare Elemente übernommen. Videos und 3D-Modelle werden durch beschriftete Platzhalter ersetzt; Animationen und Drehungen werden nicht übernommen. Für PDF den Druckdialog öffnen und **Als PDF speichern** wählen. Das ältere binäre `.ppt`-Format wird von PowerPoint erzeugt: PPTX öffnen und dort **Speichern unter → PowerPoint 97–2003 (.ppt)** wählen.
 - Mit **Vorlage zurücksetzen** lassen sich alle eigenen Texte wieder durch die Beispieltexte ersetzen.
 - Mit **← / →**, den Folienpunkten oder den Navigationsschaltflächen zwischen Folien wechseln.
 - Unter **Design** zwischen Editorial (Rot), Ozean (Blau), Botanik (Grün), Terrakotta, Kobaltblau und Flieder wählen.
@@ -34,3 +34,14 @@ Dann <http://localhost:8000> im Browser öffnen.
 - Zum Drucken oder Speichern als PDF **Datei exportieren → PDF** wählen. Die Druckansicht enthält alle Folien.
 
 Die Vorlage ist für Desktop-Präsentationen ausgelegt und enthält keine mobile Sonderdarstellung. Sie führt durch Einstieg, Leitfrage, Gliederung, Kernideen, Aha-Moment, Fazit, Fragerunde und 3D-Modell. Eigene Elemente und Bilddaten werden lokal im Browser gespeichert; die JSON-Projektdatei ermöglicht die Sicherung und Übertragung auf ein anderes Gerät. Für die 3D-Ansicht wird beim Öffnen eine Bibliothek aus dem Google CDN geladen; dafür ist eine Internetverbindung erforderlich. **Vorlage zurücksetzen** stellt Texte, Elemente, Design und alle Folienübergänge wieder auf den Ausgangszustand.
+
+## Veröffentlichen auf Cloudflare Pages
+
+Die Vorlage ist eine statische Seite und lässt sich direkt bei Cloudflare Pages betreiben:
+
+- **Framework preset:** None
+- **Build command:** `npm ci && npm run build`
+- **Build output directory:** `dist`
+- **Node.js:** Version 20 oder neuer (in den Build-Umgebungsvariablen `NODE_VERSION` setzen, falls nötig)
+
+Die Sicherheits-Header liegen in `public/_headers` und werden beim Build nach `dist/` kopiert. Ohne Build-Schritt funktioniert ebenfalls: Build command leer lassen und Build output directory auf `/` setzen, dann werden die Quelldateien direkt ausgeliefert.

@@ -1660,7 +1660,7 @@ select:focus-visible {
 }
 
 .custom-element-line {
-  height: 1% !important;
+  height: 1%;
 }
 
 .custom-element-image {
