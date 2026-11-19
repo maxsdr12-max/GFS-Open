@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171717" />
+    <meta
+      name="description"
+      content="Eine klare, direkt anpassbare Präsentationsvorlage für deine GFS mit auswählbaren Folienanimationen."
+    />
+    <title>GFS Studio – Präsentationsvorlage</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Ccircle cx='5' cy='5' r='5' fill='%23ef3828'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css?v=11" />
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.1.0/model-viewer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script type="module" src="./app.js?v=11"></script>
+  </head>
+  <body>
+    <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
+    <main class="app" id="main-content">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="GFS Studio Startseite">
+          <span class="brand-mark" aria-hidden="true">G</span>
+          <span>GFS <span class="brand-light">STUDIO</span></span>
+        </a>
+        <p class="topbar-note"><span class="live-dot" aria-hidden="true"></span> DEINE PRÄSENTATION</p>
+        <button class="edit-button" id="edit-button" type="button" aria-pressed="false">
+          <span aria-hidden="true">✎</span>
+          <span id="edit-label">Texte bearbeiten</span>
+        </button>
+        <button class="edit-button elements-toggle" id="elements-toggle" type="button" aria-pressed="false">
+          <span aria-hidden="true">▦</span>
+          <span>Elemente</span>
+        </button>
+        <button class="edit-button assistant-toggle" id="assistant-toggle" type="button" aria-pressed="false">
+          <span aria-hidden="true">✦</span>
+          <span>KI & Folien</span>
+        </button>
+        <button class="edit-button nim-settings-toggle" id="nim-settings-toggle" type="button" aria-haspopup="dialog">
+          <span aria-hidden="true">⚙</span>
+          <span>KI-Einstellungen</span>
+        </button>
+        <button class="present-button" id="present-button" type="button">
+          <span aria-hidden="true">▶</span> Präsentieren
+        </button>
+      </header>
+
+      <section class="presentation" aria-label="GFS-Präsentation">
+        <div class="editor-toolbar" aria-label="Datei und Export">
+          <details class="file-menu" id="file-menu">
+            <summary><span aria-hidden="true">▤</span> Datei</summary>
+            <div class="file-menu-popover">
+              <p class="file-menu-title">PRÄSENTATION EXPORTIEREN</p>
+              <button type="button" data-export-format="odp"><strong>ODP</strong><span>OpenDocument Präsentation</span></button>
+              <button type="button" data-export-format="pptx"><strong>PPTX</strong><span>Microsoft PowerPoint</span></button>
+              <button type="button" data-export-format="otp"><strong>OTP</strong><span>Impress-Vorlage</span></button>
+              <button type="button" data-export-format="pdf"><strong>PDF</strong><span>Druckdialog öffnen · Als PDF speichern</span></button>
+              <p class="file-menu-note">Texte und Grundformen bleiben editierbar; Animationen und Design-Details werden vereinfacht. Bilder, Videos und 3D-Modelle erscheinen als Platzhalter. Für ältere .ppt-Dateien: PPTX in PowerPoint öffnen und über „Speichern unter“ konvertieren.</p>
+              <hr style="margin: 12px 0; border-color: #44433f;">
+              <p class="file-menu-title">PRÄSENTATION IMPORTIEREN</p>
+              <button type="button" id="import-pptx-button" class="import-button"><strong>PPTX</strong><span>PowerPoint importieren</span></button>
+              <button type="button" id="import-odp-button" class="import-button"><strong>ODP</strong><span>OpenDocument importieren</span></button>
+              <button type="button" id="import-pdf-button" class="import-button"><strong>PDF</strong><span>PDF importieren (nur Text)</span></button>
+              <input id="import-pptx-input" type="file" accept=".pptx,.ppt" hidden />
+              <input id="import-odp-input" type="file" accept=".odp" hidden />
+              <input id="import-pdf-input" type="file" accept=".pdf" hidden />
+              <p class="file-menu-note">Importiert Folien, Texte und Formen. Animationen, komplexe Layouts und eingebettete Medien werden nicht übernommen.</p>
+            </div>
+          </details>
+          <span class="toolbar-separator" aria-hidden="true"></span>
+          <span class="toolbar-caption">DATEI</span>
+          <span class="toolbar-hint">Präsentation lokal sichern oder in einem anderen Programm weiterbearbeiten</span>
+          <span class="save-indicator toolbar-save-state" id="export-save-indicator" role="status" aria-live="polite">Alle Änderungen gespeichert</span>
+        </div>
+        <div class="workspace" id="workspace">
+        <aside class="assistant-panel" id="assistant-panel" aria-label="KI-Assistent und Folienvorlagen" hidden>
+          <div class="assistant-tabs" role="tablist" aria-label="KI-Assistent und Folienvorlagen">
+            <button class="assistant-tab is-active" id="assistant-chat-tab" type="button" role="tab" aria-selected="true" aria-controls="assistant-chat-view">KI-CHAT</button>
+            <button class="assistant-tab" id="assistant-check-tab" type="button" role="tab" aria-selected="false" aria-controls="assistant-check-view">INFO-CHECK</button>
+            <button class="assistant-tab" id="assistant-layouts-tab" type="button" role="tab" aria-selected="false" aria-controls="assistant-layouts-view">FOLIEN</button>
+            <button class="assistant-tab" id="assistant-roadmap-tab" type="button" role="tab" aria-selected="false" aria-controls="assistant-roadmap-view">ROADMAP</button>
+          </div>
+          <section class="assistant-view" id="assistant-chat-view" role="tabpanel" aria-labelledby="assistant-chat-tab">
+            <p class="panel-kicker">KI-ASSISTENT · OPENROUTER</p>
+            <h2 class="assistant-title">Ideen sortieren.<br />Klarer präsentieren.</h2>
+            <div class="ai-capability-note" id="ai-capability-note">Wähle einen Anbieter in den KI-Einstellungen.</div>
+            <div class="chat-toolbar">
+              <span class="chat-context" id="chat-context">KONTEXT · AKTUELLE FOLIE</span>
+              <button class="chat-clear-button" id="chat-clear-button" type="button">Neuer Chat</button>
+            </div>
+            <div class="chat-messages" id="chat-messages" aria-live="polite">
+              <p class="chat-welcome">Frag nach einer Erklärung, einer besseren Gliederung oder Feedback. Folien und Texte fügt die KI nur auf ausdrückliche Bitte hinzu.</p>
+            </div>
+            <div class="chat-quick-prompts" aria-label="Schnellaktionen">
+              <button type="button" data-chat-prompt="Gib mir konkretes Feedback zu dieser Folie und schlage eine klarere Version vor.">Folie verbessern</button>
+              <button type="button" data-chat-prompt="Erkläre die Kernaussage dieser Folie einfach und altersgerecht.">Einfach erklären</button>
+              <button type="button" data-chat-prompt="Schlage eine passende nächste Folie vor und füge sie mit einem passenden Layout ein.">Nächste Folie</button>
+            </div>
+            <label class="assistant-tools-toggle">
+              <input id="assistant-tools-enabled" type="checkbox" checked />
+              <span><strong>Werkzeuge erlauben</strong><small>Folien bearbeiten und Wikipedia durchsuchen</small></span>
+            </label>
+            <form class="chat-form" id="chat-form">
+              <label class="sr-only" for="chat-input">Nachricht an die KI</label>
+              <textarea id="chat-input" rows="2" maxlength="2000" placeholder="Nachricht eingeben · Enter sendet, Shift+Enter fügt eine Zeile ein." disabled></textarea>
+              <button id="chat-send" type="submit" disabled aria-label="Nachricht senden">↑</button>
+            </form>
+            <button class="nim-inline-settings" id="nim-inline-settings" type="button">KI-Einstellungen öffnen</button>
+            <p class="ai-privacy-note">OpenRouter funktioniert direkt im Browser (CORS-freundlich). Bei aktivierten Werkzeugen wird eine Wikipedia-Suche direkt an Wikimedia gesendet.</p>
+          </section>
+          <section class="assistant-view" id="assistant-check-view" role="tabpanel" aria-labelledby="assistant-check-tab" hidden>
+            <p class="panel-kicker">QUELLEN UND AUSSAGEN</p>
+            <h2 class="assistant-title">Was ist gut belegt?</h2>
+            <p class="check-disclaimer">Die Prüfung findet keine Fakten im Internet. Sie hilft, unbelegte Aussagen und fehlende Quellen zu finden – bitte Fakten selbst anhand verlässlicher Quellen kontrollieren.</p>
+            <button class="check-button" id="check-slide-button" type="button">Aktuelle Folie prüfen</button>
+            <div class="check-results" id="check-results" aria-live="polite">
+              <p>Starte den Check, um konkrete Hinweise zu deiner Folie zu erhalten.</p>
+            </div>
+          </section>
+          <section class="assistant-view" id="assistant-layouts-view" role="tabpanel" aria-labelledby="assistant-layouts-tab" hidden>
+            <p class="panel-kicker">EINZELNE FOLIE EINFÜGEN</p>
+            <h2 class="assistant-title">Folienvorlagen</h2>
+            <p class="layout-intro">Füge nur das Layout ein, das du gerade brauchst. Alle Titel und Texte sind einzeln verschiebbar und formatierbar.</p>
+            <div class="layout-gallery" id="layout-gallery"></div>
+            <button class="delete-slide-button" id="delete-slide-button" type="button" disabled>Diese Zusatzfolie löschen</button>
+            <button class="delete-slide-button" id="duplicate-slide-button" type="button" disabled>Folie duplizieren</button>
+          </section>
+          <section class="assistant-view" id="assistant-roadmap-view" role="tabpanel" aria-labelledby="assistant-roadmap-tab" hidden>
+            <p class="panel-kicker">STRATEGISCHE PLANUNG</p>
+            <h2 class="assistant-title">Roadmap-Builder</h2>
+            <p class="layout-intro">Erstelle professionelle Roadmaps mit Phasen, Meilensteinen und Abhängigkeiten. Alles per Drag & Drop anpassbar.</p>
+            <div class="roadmap-builder">
+              <div class="roadmap-toolbar">
+                <button class="roadmap-action" id="roadmap-add-phase" type="button" aria-label="Phase hinzufügen"><span aria-hidden="true">＋</span> Phase</button>
+                <button class="roadmap-action" id="roadmap-add-milestone" type="button" aria-label="Meilenstein hinzufügen"><span aria-hidden="true">◆</span> Meilenstein</button>
+                <button class="roadmap-action" id="roadmap-add-dependency" type="button" aria-label="Abhängigkeit hinzufügen"><span aria-hidden="true">⇄</span> Abhängigkeit</button>
+              </div>
+              <div class="roadmap-canvas" id="roadmap-canvas"></div>
+              <div class="roadmap-properties" id="roadmap-properties" hidden>
+                <div class="panel-divider"></div>
+                <p class="panel-section-label">AUSGEWÄHLTES ELEMENT</p>
+                <label class="property-row">
+                  <span>Titel</span>
+                  <input id="roadmap-element-title" type="text" placeholder="Titel eingeben" />
+                </label>
+                <label class="property-row">
+                  <span>Zeitraum</span>
+                  <input id="roadmap-element-date" type="text" placeholder="z.B. Q1 2024" />
+                </label>
+                <label class="property-row">
+                  <span>Status</span>
+                  <select id="roadmap-element-status">
+                    <option value="planned">Geplant</option>
+                    <option value="in-progress">In Arbeit</option>
+                    <option value="done">Erledigt</option>
+                    <option value="blocked">Blockiert</option>
+                  </select>
+                </label>
+                <label class="property-row">
+                  <span>Farbe</span>
+                  <input id="roadmap-element-color" type="color" value="#ef3828" />
+                </label>
+                <button class="roadmap-action roadmap-delete" id="roadmap-delete-element" type="button" aria-label="Ausgewähltes Roadmap-Element löschen">Element löschen</button>
+              </div>
+            </div>
+            <button class="roadmap-apply" id="roadmap-apply" type="button">Als Folie einfügen</button>
+          </section>
+        </aside>
+        <div class="stage" id="stage" data-template="editorial">
+          <section class="slide slide-cover is-entering" aria-label="Folie 1" data-slide>
+            <span class="shape shape-cover" aria-hidden="true"></span>
+            <div class="slide-content cover-content">
+              <p class="eyebrow"><span class="eyebrow-mark">★</span> DEIN GFS-STARTER</p>
+              <h1 class="cover-title">
+                <span data-editable="cover-line-one">DEIN THEMA</span>
+                <span class="title-highlight" data-editable="cover-line-two">GROSS GEDACHT.</span>
+              </h1>
+              <p class="cover-copy" data-editable="cover-subtitle">
+                Ein guter Einstieg. Ein klarer Gedanke. Deine Bühne.
+              </p>
+              <div class="cover-meta">
+                <span class="meta-spark" aria-hidden="true">✳</span>
+                <p data-editable="cover-name">VORNAME · FACH · DATUM</p>
+              </div>
+            </div>
+            <span class="slide-sticker sticker-cover" aria-hidden="true">LOS<br />GEHT'S!</span>
+            <span class="slide-number">01 <i>/ 08</i></span>
+          </section>
+
+          <section class="slide slide-question" aria-label="Folie 2" data-slide hidden>
+            <span class="shape shape-question" aria-hidden="true"></span>
+            <div class="slide-content question-content">
+              <p class="eyebrow"><span class="eyebrow-mark">01</span> DER AUFHÄNGER</p>
+              <p class="question-intro" data-editable="question-intro">ALLES BEGINNT MIT EINER FRAGE …</p>
+              <h2 class="big-question">
+                Was wäre, wenn <span class="question-accent" data-editable="question-main">dein Thema</span> plötzlich dich betrifft?
+              </h2>
+              <p class="slide-hint" data-editable="question-hint">
+                Starte mit einem Beispiel, einer überraschenden Zahl oder einer kurzen Frage ans Publikum.
+              </p>
+              <span class="question-arrow" aria-hidden="true">↗</span>
+            </div>
+            <span class="slide-number">02 <i>/ 08</i></span>
+          </section>
+
+          <section class="slide slide-plan" aria-label="Folie 3" data-slide hidden>
+            <span class="shape shape-plan" aria-hidden="true"></span>
+            <div class="slide-content plan-content">
+              <p class="eyebrow"><span class="eyebrow-mark">02</span> DER FAHRPLAN</p>
+              <h2 class="slide-title" data-editable="plan-title">Drei Stopps. Ein Aha-Moment.</h2>
+              <div class="plan-list">
+                <article class="plan-stop">
+                  <span class="stop-number">01</span>
+                  <div>
+                    <h3 data-editable="plan-one-title">Worum geht's?</h3>
+                    <p data-editable="plan-one-copy">Thema und wichtigste Begriffe kurz erklären.</p>
+                  </div>
+                  <span class="stop-arrow" aria-hidden="true">↘</span>
+                </article>
+                <article class="plan-stop">
+                  <span class="stop-number">02</span>
+                  <div>
+                    <h3 data-editable="plan-two-title">Was steckt dahinter?</h3>
+                    <p data-editable="plan-two-copy">Die spannendsten Hintergründe und Beispiele zeigen.</p>
+                  </div>
+                  <span class="stop-arrow" aria-hidden="true">↘</span>
+                </article>
+                <article class="plan-stop">
+                  <span class="stop-number">03</span>
+                  <div>
+                    <h3 data-editable="plan-three-title">Was nehmen wir mit?</h3>
+                    <p data-editable="plan-three-copy">Die Leitfrage beantworten und ein Fazit ziehen.</p>
+                  </div>
+                  <span class="stop-arrow" aria-hidden="true">✳</span>
+                </article>
+              </div>
+            </div>
+            <span class="slide-sticker sticker-plan" aria-hidden="true">KURZ<br />& KNACKIG</span>
+            <span class="slide-number">03 <i>/ 08</i></span>
+          </section>
+
+          <section class="slide slide-ideas" aria-label="Folie 4" data-slide hidden>
+            <span class="shape shape-ideas" aria-hidden="true"></span>
+            <div class="slide-content ideas-content">
+              <p class="eyebrow"><span class="eyebrow-mark">03</span> DIE KERNIDEEN</p>
+              <h2 class="slide-title" data-editable="ideas-title">Drei Ideen, die hängen bleiben.</h2>
+              <div class="idea-grid">
+                <article class="idea-card idea-card-pink">
+                  <span class="idea-emoji" aria-hidden="true">✳</span>
+                  <p class="card-kicker" data-editable="idea-one-kicker">DIE BASIS</p>
+                  <h3 data-editable="idea-one-title">Erster Gedanke</h3>
+                  <p data-editable="idea-one-copy">Erkläre hier den wichtigsten Begriff in einem einfachen Satz.</p>
+                  <span class="card-index">01</span>
+                </article>
+                <article class="idea-card idea-card-lime">
+                  <span class="idea-emoji" aria-hidden="true">↗</span>
+                  <p class="card-kicker" data-editable="idea-two-kicker">DAS BEISPIEL</p>
+                  <h3 data-editable="idea-two-title">Zweiter Gedanke</h3>
+                  <p data-editable="idea-two-copy">Mach die Idee mit einem konkreten Beispiel verständlich.</p>
+                  <span class="card-index">02</span>
+                </article>
+                <article class="idea-card idea-card-blue">
+                  <span class="idea-emoji" aria-hidden="true">✦</span>
+                  <p class="card-kicker" data-editable="idea-three-kicker">DER DREH</p>
+                  <h3 data-editable="idea-three-title">Dritter Gedanke</h3>
+                  <p data-editable="idea-three-copy">Zeig, warum das Thema heute oder für uns wichtig ist.</p>
+                  <span class="card-index">03</span>
+                </article>
+              </div>
+            </div>
+            <span class="slide-number">04 <i>/ 08</i></span>
+          </section>
+
+          <section class="slide slide-wow" aria-label="Folie 5" data-slide hidden>
+            <span class="shape shape-wow" aria-hidden="true"></span>
+            <div class="slide-content wow-content">
+              <p class="eyebrow"><span class="eyebrow-mark">04</span> DER AHA-MOMENT</p>
+              <div class="wow-layout">
+                <div>
+                  <p class="wow-label" data-editable="wow-label">WUSSTEST DU SCHON?</p>
+                  <h2 class="wow-number"><span data-editable="wow-number">1 von 3</span><span>…</span></h2>
+                  <p class="wow-copy" data-editable="wow-copy">
+                    Hier kommt deine überraschendste Zahl, Entdeckung oder Aussage hin.
+                  </p>
+                </div>
+                <div class="source-card">
+                  <span class="source-icon" aria-hidden="true">↗</span>
+                  <p class="source-label">GUT BELEGT IST HALB GEWONNEN</p>
+                  <p class="source-text" data-editable="wow-source">
+                    Quelle: Autor / Institution, Titel, Jahr, Link
+                  </p>
+                </div>
+              </div>
+              <p class="tiny-note" data-editable="wow-note">Eine Grafik oder ein Bild macht deinen Aha-Moment noch stärker.</p>
+            </div>
+            <span class="slide-number">05 <i>/ 08</i></span>
+          </section>
+
+          <section class="slide slide-takeaway" aria-label="Folie 6" data-slide hidden>
+            <span class="shape shape-takeaway" aria-hidden="true"></span>
+            <div class="slide-content takeaway-content">
+              <p class="eyebrow"><span class="eyebrow-mark">05</span> DAS FAZIT</p>
+              <h2 class="slide-title" data-editable="takeaway-title">Okay, und jetzt?</h2>
+              <p class="takeaway-lead" data-editable="takeaway-lead">
+                Die Antwort auf deine Leitfrage in einem klaren Satz.
+              </p>
+              <div class="takeaway-bottom">
+                <span class="takeaway-star" aria-hidden="true">✳</span>
+                <p data-editable="takeaway-copy">
+                  Fasse die wichtigste Erkenntnis zusammen. Lieber ein guter Gedanke als zehn neue Fakten.
+                </p>
+              </div>
+              <p class="tiny-note" data-editable="takeaway-sources">Quellen: Hier deine wichtigsten Quellen übersichtlich nennen.</p>
+            </div>
+            <span class="slide-number">06 <i>/ 08</i></span>
+          </section>
+
+          <section class="slide slide-questions" aria-label="Folie 7" data-slide hidden>
+            <span class="shape shape-questions" aria-hidden="true"></span>
+            <div class="slide-content questions-content">
+              <p class="eyebrow"><span class="eyebrow-mark">06</span> DU BIST DRAN</p>
+              <h2 class="questions-title">
+                <span data-editable="questions-title">Fragen?</span><br />
+                <span data-editable="questions-subtitle">Diskussion?</span>
+              </h2>
+              <p class="questions-copy" data-editable="questions-copy">
+                Danke fürs Zuhören. Jetzt bin ich gespannt auf eure Gedanken.
+              </p>
+              <span class="question-mark" aria-hidden="true">?</span>
+            </div>
+            <span class="slide-sticker sticker-questions" aria-hidden="true">DEINE<br />BÜHNE!</span>
+            <span class="slide-number">07 <i>/ 08</i></span>
+          </section>
+
+          <section class="slide slide-model" aria-label="Folie 8" data-slide hidden>
+            <div class="slide-content model-content">
+              <div class="model-heading">
+                <div>
+                  <p class="eyebrow"><span class="eyebrow-mark">07</span> ZUM ANFASSEN NAH</p>
+                  <h2 class="slide-title" data-editable="model-title">3D zum Anfassen.</h2>
+                </div>
+                <button class="model-upload-button" id="model-upload-button" type="button" disabled>
+                  <span aria-hidden="true">＋</span> 3D-MODELL LADEN
+                </button>
+                <input id="model-file-input" class="sr-only" type="file" accept=".glb,model/gltf-binary" aria-label="GLB-Datei auswählen" />
+              </div>
+              <div class="model-layout">
+                <div class="model-viewport" id="model-drop-zone">
+                  <model-viewer
+                    id="model-viewer"
+                    camera-controls
+                    auto-rotate
+                    rotation-per-second="30deg"
+                    shadow-intensity="1"
+                    exposure="1"
+                    environment-image="neutral"
+                    interaction-prompt="auto"
+                    aria-label="Interaktive 3D-Modellansicht"
+                    hidden
+                  ></model-viewer>
+                  <div class="model-empty-state" id="model-empty-state">
+                    <span class="model-empty-icon" aria-hidden="true">◇</span>
+                    <p class="model-empty-title">Dein Modell. Deine Perspektive.</p>
+                    <p class="model-empty-copy">GLB-Datei hier ablegen oder Modell laden.<br />Drehen und zoomen direkt mit Maus oder Touchpad.</p>
+                    <button class="model-empty-button" id="model-empty-button" type="button" disabled>Datei auswählen</button>
+                    <p class="model-file-note">Nur GLB · maximal 150 MB · bleibt auf deinem Gerät</p>
+                  </div>
+                  <p class="model-status" id="model-status" role="status" aria-live="polite">
+                    3D-Ansicht wird vorbereitet …
+                  </p>
+                </div>
+                <aside class="model-controls" aria-label="3D-Modell steuern">
+                  <p class="model-control-heading">ANSICHT</p>
+                  <button class="model-control-button" id="rotate-button" type="button" aria-pressed="true" disabled>
+                    <span aria-hidden="true">↻</span>
+                    Automatisch drehen
+                    <span class="control-state" id="rotate-state">AN</span>
+                  </button>
+                  <button class="model-control-button" id="reset-camera-button" type="button" disabled>
+                    <span aria-hidden="true">⌖</span>
+                    Ansicht zurücksetzen
+                  </button>
+                  <label class="model-slider">
+                    <span>LICHT <output id="exposure-value" for="exposure-control">1.0</output></span>
+                    <input id="exposure-control" type="range" min="0.5" max="2" step="0.1" value="1" disabled />
+                  </label>
+                  <label class="model-slider">
+                    <span>SCHATTEN <output id="shadow-value" for="shadow-control">1.0</output></span>
+                    <input id="shadow-control" type="range" min="0" max="2" step="0.1" value="1" disabled />
+                  </label>
+                  <p class="model-file-name" id="model-file-name">Noch kein Modell geladen</p>
+                  <button class="model-remove-button" id="remove-model-button" type="button" hidden>Modell entfernen</button>
+                </aside>
+              </div>
+            </div>
+            <span class="slide-number">08 <i>/ 08</i></span>
+          </section>
+        </div>
+        <aside class="element-panel" id="element-panel" aria-label="Folienelemente bearbeiten" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">FOLIE <span id="panel-slide-number">01</span></p>
+              <h2>Elemente</h2>
+            </div>
+            <button class="panel-close" id="panel-close" type="button" aria-label="Elemente-Menü schließen">×</button>
+          </div>
+          <div class="element-actions">
+            <button class="element-action" id="add-text-button" type="button" aria-label="Text-Element hinzufügen"><span aria-hidden="true">＋</span> Text</button>
+            <button class="element-action" id="add-shape-button" type="button" aria-label="Form-Element hinzufügen"><span aria-hidden="true">＋</span> Form</button>
+            <button class="element-action" id="add-image-button" type="button" aria-label="Bild-Element hinzufügen"><span aria-hidden="true">＋</span> Bild</button>
+            <button class="element-action element-action-video" id="add-video-button" type="button" aria-label="Video-Element hinzufügen"><span aria-hidden="true">▶</span> Video-Link</button>
+            <button class="element-action" id="add-sticky-button" type="button" aria-label="Notizzettel hinzufügen"><span aria-hidden="true">🗒</span> Notizzettel</button>
+            <button class="element-action" id="add-arrow-button" type="button" aria-label="Pfeil hinzufügen"><span aria-hidden="true">➤</span> Pfeil</button>
+            <button class="element-action" id="add-icon-button" type="button" aria-label="Icon hinzufügen"><span aria-hidden="true">★</span> Icon</button>
+            <button class="element-action" id="add-chart-button" type="button" aria-label="Diagramm-Element hinzufügen"><span aria-hidden="true">📊</span> Diagramm</button>
+            <input id="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          </div>
+          <div class="panel-divider"></div>
+          <div class="element-toolbar">
+            <p class="panel-section-label">AUF DIESER FOLIE</p>
+            <div class="element-toolbar-actions">
+              <button class="element-toolbar-btn" id="group-elements-btn" type="button" title="Elemente gruppieren" disabled>⊞ Gruppe</button>
+              <button class="element-toolbar-btn" id="ungroup-elements-btn" type="button" title="Gruppe auflösen" disabled>⊟ Auftrennen</button>
+              <button class="element-toolbar-btn" id="align-left-btn" type="button" title="Links ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="align-center-btn" type="button" title="Horizontal zentrieren" disabled>⬜</button>
+              <button class="element-toolbar-btn" id="align-right-btn" type="button" title="Rechts ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="align-top-btn" type="button" title="Oben ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="align-middle-btn" type="button" title="Vertikal zentrieren" disabled>⬜</button>
+              <button class="element-toolbar-btn" id="align-bottom-btn" type="button" title="Unten ausrichten" disabled>⬛</button>
+              <button class="element-toolbar-btn" id="distribute-h-btn" type="button" title="Horizontal verteilen" disabled>⋮</button>
+              <button class="element-toolbar-btn" id="distribute-v-btn" type="button" title="Vertikal verteilen" disabled>⋮</button>
+            </div>
+          </div>
+          <div class="element-list" id="element-list">
+            <p class="empty-element-list">Noch keine eigenen Elemente.</p>
+          </div>
+          <div class="layer-panel" id="layer-panel" hidden>
+            <div class="panel-divider"></div>
+            <p class="panel-section-label">EBENEN</p>
+            <div class="layer-list" id="layer-list"></div>
+          </div>
+          <div class="element-properties" id="element-properties" hidden>
+            <div class="panel-divider"></div>
+            <p class="panel-section-label">AUSGEWÄHLTES ELEMENT</p>
+            <label class="property-row">
+              <span>Farbe</span>
+              <input id="element-color" type="color" value="#ef3828" aria-label="Elementfarbe" />
+            </label>
+            <label class="property-row" id="shape-type-row" hidden>
+              <span>Form</span>
+              <select id="element-shape-type">
+                <option value="rectangle">Rechteck</option>
+                <option value="circle">Kreis</option>
+                <option value="line">Linie</option>
+              </select>
+            </label>
+            <label class="property-row" id="font-size-row">
+              <span>Textgröße</span>
+              <input id="element-font-size" type="range" min="1.4" max="7" step="0.1" value="3" />
+            </label>
+            <label class="property-row" id="font-family-row" hidden>
+              <span>Schrift</span>
+              <select id="element-font-family">
+                <option value="Arial, Helvetica, sans-serif">Klar</option>
+                <option value="Georgia, serif">Serif</option>
+                <option value="monospace">Mono</option>
+              </select>
+            </label>
+            <label class="property-row" id="text-align-row" hidden>
+              <span>Ausrichtung</span>
+              <select id="element-text-align">
+                <option value="left">Links</option>
+                <option value="center">Mittig</option>
+                <option value="right">Rechts</option>
+              </select>
+            </label>
+            <div class="property-row" id="bold-row" hidden>
+              <span>Fettschrift</span>
+              <button id="element-bold-button" class="bold-toggle" type="button" aria-pressed="false">B</button>
+            </div>
+            <label class="property-row">
+              <span>Breite</span>
+              <input id="element-width" type="range" min="2" max="100" step="0.5" value="30" />
+            </label>
+            <label class="property-row" id="height-row">
+              <span>Höhe</span>
+              <input id="element-height" type="range" min="1" max="100" step="0.5" value="18" />
+            </label>
+            <button class="delete-element-button" id="delete-element-button" type="button">Element löschen</button>
+          </div>
+          <div class="panel-bottom">
+            <p>Elemente mit der Maus ziehen, doppelklicken zum Schreiben.</p>
+            <div class="project-actions">
+              <button class="project-button" id="export-project-button" type="button">Projekt sichern</button>
+              <button class="project-button project-button-secondary" id="import-project-button" type="button">Projekt laden</button>
+              <input id="project-file-input" type="file" accept="application/json,.json" hidden />
+            </div>
+            <span class="save-indicator" id="save-indicator" role="status" aria-live="polite">Automatisch gespeichert</span>
+          </div>
+        </aside>
+        </div>
+
+        <div class="presentation-footer">
+          <div class="footer-left">
+            <button class="icon-button" id="previous-button" type="button" aria-label="Vorherige Folie">
+              <span aria-hidden="true">←</span>
+            </button>
+            <span class="page-count" id="page-count" aria-live="polite">01 <span>/ 08</span></span>
+            <button class="icon-button icon-button-next" id="next-button" type="button" aria-label="Nächste Folie">
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <nav class="slide-dots" id="slide-dots" aria-label="Folien auswählen"></nav>
+          <div class="footer-right">
+            <div class="quick-export" aria-label="Schnellexport">
+              <span>EXPORT</span>
+              <button type="button" data-export-format="odp">ODP</button>
+              <button type="button" data-export-format="pptx">PPTX</button>
+              <button type="button" data-export-format="pdf">PDF</button>
+            </div>
+            <label class="template-picker">
+              <span>DESIGN</span>
+              <select id="template-select" aria-label="Präsentationsdesign auswählen">
+                <option value="editorial">Editorial</option>
+                <option value="ocean">Ozean</option>
+                <option value="botanical">Botanik</option>
+                <option value="terracotta">Terrakotta</option>
+                <option value="cobalt">Kobaltblau</option>
+                <option value="lavender">Flieder</option>
+              </select>
+            </label>
+            <button class="icon-button" id="master-editor-button" type="button" aria-label="Slide Master bearbeiten" title="Slide Master bearbeiten">
+              <span aria-hidden="true">⚙</span>
+            </button>
+            <label class="transition-picker">
+              <span id="transition-label">FOLIE 01 · ÜBERGANG</span>
+              <select id="transition-select" aria-label="Folienübergang auswählen">
+                <option value="cut">Klarer Schnitt</option>
+                <option value="wipe">Farb-Wischer</option>
+                <option value="zoom">Zoom-in</option>
+                <option value="flip">3D-Klappe</option>
+                <option value="drop">Sturzflug</option>
+                <option value="glitch">Glitch</option>
+                <option value="spin">Wirbel</option>
+              </select>
+            </label>
+            <button class="text-button" id="reset-button" type="button">Vorlage zurücksetzen</button>
+            <button class="icon-button fullscreen-button" id="fullscreen-button" type="button" aria-label="Vollbild starten">
+              <span aria-hidden="true">⛶</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <dialog class="nim-settings-dialog" id="nim-settings-dialog" aria-labelledby="nim-settings-title">
+        <form class="nim-settings-form" id="nim-settings-form">
+          <div class="nim-settings-heading">
+            <div>
+              <p class="panel-kicker">OPENROUTER · API-KONFIGURATION</p>
+              <h2 id="nim-settings-title">KI-Einstellungen</h2>
+            </div>
+            <button class="panel-close" id="nim-settings-close" type="button" aria-label="Einstellungen schließen">×</button>
+          </div>
+          <p class="nim-settings-intro">OpenRouter funktioniert direkt im Browser (CORS-freundlich). Der Schlüssel bleibt lokal im Browser und wird nicht in Projektdateien exportiert.</p>
+          <label class="nim-field">
+            <span>OpenRouter API-Schlüssel</span>
+            <input id="nim-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" />
+          </label>
+          <label class="nim-field">
+            <span>Modell</span>
+            <input id="nim-model" type="text" value="google/gemma-2-9b-it:free" autocomplete="off" spellcheck="false" />
+            <small>Standard: Google Gemma 2 9B IT (kostenlos) · Mehr Modelle auf openrouter.ai/models</small>
+          </label>
+          <label class="nim-field nim-temperature-field">
+            <span>Antwortstil <output id="nim-temperature-value" for="nim-temperature">0.4</output></span>
+            <input id="nim-temperature" type="range" min="0" max="1" step="0.1" value="0.4" />
+          </label>
+          <label class="nim-remember">
+            <input id="nim-remember-key" type="checkbox" checked />
+            <span>API-Schlüssel auf diesem Gerät merken <small>Deaktivieren für Sitzungsspeicherung. Auf gemeinsam genutzten Geräten nicht aktivieren.</small></span>
+          </label>
+          <div class="nim-security-note">Der Schlüssel wird lokal im Browser gespeichert. Niemals in den Quellcode oder ein öffentliches GitHub-Repository schreiben.</div>
+          <div class="nim-settings-actions">
+            <button class="project-button project-button-secondary" id="nim-clear-key" type="button">Schlüssel entfernen</button>
+            <button class="present-button" id="nim-save-settings" type="submit">Einstellungen speichern</button>
+          </div>
+          <p class="nim-settings-status" id="nim-settings-status" role="status" aria-live="polite"></p>
+        </form>
+      </dialog>
+
+      <p class="keyboard-hint" id="status-message" role="status" aria-live="polite">
+        Mit ← → navigieren · Elemente-Menü zum Gestalten · P für Präsentationsmodus
+      </p>
+    </main>
+  </body>
+</html>
