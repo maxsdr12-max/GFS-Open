@@ -3543,7 +3543,7 @@ function getExportSlideData(slide, index, exportStage) {
       width: Math.max(rect.width, parentRect.right - left) / bounds.width,
       height: Math.max(rect.height, parentRect.height) / bounds.height,
       color: colorToHex(style.color),
-      fontSize: Math.max(8, parseFloat(style.fontSize) || 16) * 0.75,
+      fontSize: Math.max(8, parseFloat(style.fontSize) || 16),
       fontFamily: style.fontFamily.split(",")[0].replace(/["']/g, "").trim() || "Arial",
       bold: Number.parseInt(style.fontWeight, 10) >= 600 || style.fontWeight === "bold",
       align: style.textAlign === "center" ? "ctr" : style.textAlign === "right" ? "r" : "l",
@@ -3797,111 +3797,58 @@ async function exportToPDF() {
       format: [1920, 1080],
     });
     
-    const data = getExportData();
     const slideWidth = 1920;
     const slideHeight = 1080;
     
-    for (let i = 0; i < data.length; i++) {
-      const slideData = data[i];
+    // Get all slides from the stage
+    const slidesToExport = Array.from(stage.querySelectorAll("[data-slide]"));
+    
+    for (let i = 0; i < slidesToExport.length; i++) {
+      const slide = slidesToExport[i];
       
       if (i > 0) {
         pdf.addPage([slideWidth, slideHeight], "landscape");
       }
       
-      // Render slide to canvas
-      const canvas = document.createElement("canvas");
-      canvas.width = slideWidth * 2; // 2x for quality
-      canvas.height = slideHeight * 2;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(2, 2);
+      // Clone the slide for rendering
+      const clone = slide.cloneNode(true);
+      clone.style.position = "fixed";
+      clone.style.left = "-9999px";
+      clone.style.top = "0";
+      clone.style.width = `${slideWidth}px`;
+      clone.style.height = `${slideHeight}px`;
+      clone.style.maxWidth = "none";
+      clone.style.transform = "none";
+      clone.hidden = false;
+      clone.classList.remove("is-entering");
       
-      // Create a temporary container for rendering
-      const container = document.createElement("div");
-      container.style.width = `${slideWidth}px`;
-      container.style.height = `${slideHeight}px`;
-      container.style.position = "absolute";
-      container.style.left = "-9999px";
-      container.style.top = "0";
-      container.style.background = slideData.background || "#eeece5";
-      container.style.color = slideData.color || "#171717";
-      container.style.fontFamily = "Arial, Helvetica, sans-serif";
-      container.style.overflow = "hidden";
+      // Ensure all child elements are visible
+      clone.querySelectorAll("[hidden]").forEach(el => el.hidden = false);
       
-      // Add slide content
-      slideData.elements.forEach(element => {
-        const el = document.createElement(element.type === "text" ? "div" : "div");
-        el.style.position = "absolute";
-        el.style.left = `${element.x}%`;
-        el.style.top = `${element.y}%`;
-        el.style.width = `${element.width}%`;
-        el.style.fontSize = `${element.size * 1.5}rem`;
-        el.style.color = element.color || "#171717";
-        el.style.fontFamily = element.family || "Arial, Helvetica, sans-serif";
-        el.style.textAlign = element.align || "left";
-        el.style.fontWeight = element.bold ? "800" : "400";
-        if (element.type === "text") {
-          el.textContent = element.text;
-        } else if (element.type === "shape") {
-          el.style.background = element.color || "#ef3828";
-          el.style.opacity = "0.85";
-          el.style.height = `${element.height || 18}%`;
-          if (element.shape === "circle") el.style.borderRadius = "50%";
-          if (element.shape === "line") el.style.height = "1%";
-        } else if (element.type === "image") {
-          const img = document.createElement("img");
-          img.src = element.src;
-          img.alt = element.alt || "";
-          img.style.maxHeight = "85%";
-          img.style.objectFit = "contain";
-          container.append(img);
-          return;
-        }
-        container.append(el);
-      });
+      document.body.append(clone);
       
-      document.body.append(container);
-      
-      // Render to canvas using html2canvas-like approach
+      // Wait for rendering
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Draw background
-      ctx.fillStyle = slideData.background || "#eeece5";
-      ctx.fillRect(0, 0, slideWidth, slideHeight);
-      
-      // Draw elements
-      slideData.elements.forEach(element => {
-        if (element.type === "text") {
-          ctx.font = `${element.bold ? "bold " : ""}${element.size * 1.5}rem ${element.family || "Arial, Helvetica, sans-serif"}`;
-          ctx.fillStyle = element.color || "#171717";
-          ctx.textAlign = element.align || "left";
-          const x = (element.x / 100) * slideWidth;
-          const y = (element.y / 100) * slideHeight + element.size * 1.5;
-          ctx.fillText(element.text, x, y);
-        } else if (element.type === "shape") {
-          ctx.fillStyle = element.color || "#ef3828";
-          ctx.globalAlpha = 0.85;
-          const x = (element.x / 100) * slideWidth;
-          const y = (element.y / 100) * slideHeight;
-          const w = (element.width / 100) * slideWidth;
-          const h = (element.height / 100) * slideHeight;
-          if (element.shape === "circle") {
-            ctx.beginPath();
-            ctx.arc(x + w/2, y + h/2, Math.min(w, h)/2, 0, 2*Math.PI);
-            ctx.fill();
-          } else if (element.shape === "line") {
-            ctx.fillRect(x, y, w, h);
-          } else {
-            ctx.fillRect(x, y, w, h);
-          }
-          ctx.globalAlpha = 1;
-        }
+      // Use html2canvas to capture the slide exactly as rendered
+      const canvas = await html2canvas(clone, {
+        scale: 2, // 2x for quality
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(clone).backgroundColor || "#eeece5",
+        width: slideWidth,
+        height: slideHeight,
+        windowWidth: slideWidth,
+        windowHeight: slideHeight,
       });
       
+      document.body.removeChild(clone);
+      
       // Add slide to PDF
-      const imgData = canvas.toDataURL("image/png", 0.9);
+      const imgData = canvas.toDataURL("image/png", 0.95);
       pdf.addImage(imgData, "PNG", 0, 0, slideWidth, slideHeight);
       
-      if (i < data.length - 1) {
+      if (i < slidesToExport.length - 1) {
         pdf.addPage([slideWidth, slideHeight], "landscape");
       }
     }
