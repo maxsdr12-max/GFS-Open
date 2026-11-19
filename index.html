@@ -9,12 +9,10 @@
       content="Eine klare, direkt anpassbare Präsentationsvorlage für deine GFS mit auswählbaren Folienanimationen."
     />
     <title>GFS Studio – Präsentationsvorlage</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Ccircle cx='5' cy='5' r='5' fill='%23ef3828'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="./styles.css?v=11" />
-    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="./styles.css?v=10" />
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.1.0/model-viewer.min.js"></script>
-    <script type="module" src="./app.js?v=11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script type="module" src="./app.js?v=10"></script>
   </head>
   <body>
     <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
@@ -481,11 +479,11 @@
             </div>
             <label class="property-row">
               <span>Breite</span>
-              <input id="element-width" type="range" min="2" max="100" step="0.5" value="30" />
+              <input id="element-width" type="range" min="8" max="90" step="1" value="30" />
             </label>
-            <label class="property-row" id="height-row">
+            <label class="property-row" id="height-row" hidden>
               <span>Höhe</span>
-              <input id="element-height" type="range" min="1" max="100" step="0.5" value="18" />
+              <input id="element-height" type="range" min="5" max="90" step="1" value="18" />
             </label>
             <button class="delete-element-button" id="delete-element-button" type="button">Element löschen</button>
           </div>

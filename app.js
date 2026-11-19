@@ -913,8 +913,7 @@ function isValidElement(element) {
   if (!element || typeof element !== "object") return false;
   if (typeof element.id !== "string" || element.id.length > 100 || !["text", "shape", "image", "video"].includes(element.type)) return false;
   if (![element.x, element.y, element.width].every(Number.isFinite)) return false;
-  if (element.x < 0 || element.x > 100 || element.y < 0 || element.y > 100 || element.width < 1 || element.width > 100) return false;
-  if (element.height !== undefined && (!Number.isFinite(element.height) || element.height < 1 || element.height > 100)) return false;
+  if (element.x < 0 || element.x > 100 || element.y < 0 || element.y > 100 || element.width < 5 || element.width > 95) return false;
   if (element.color && !/^#[0-9a-f]{6}$/i.test(element.color)) return false;
   if (element.size !== undefined && (!Number.isFinite(element.size) || element.size < 1.4 || element.size > 7)) return false;
   if (element.type === "text") {
@@ -925,7 +924,8 @@ function isValidElement(element) {
       (element.bold === undefined || typeof element.bold === "boolean");
   }
   if (element.type === "shape") {
-    return ["rectangle", "circle", "line"].includes(element.shape);
+    return ["rectangle", "circle", "line"].includes(element.shape) &&
+      (element.height === undefined || (Number.isFinite(element.height) && element.height >= 5 && element.height <= 90));
   }
   if (element.type === "video") {
     return typeof element.src === "string" &&
@@ -985,12 +985,7 @@ function renderSlideElementsInternal(index) {
     node.style.setProperty("--element-family", item.family || "Arial, Helvetica, sans-serif");
     node.style.setProperty("--element-align", item.align || "left");
     node.style.fontWeight = item.bold ? "800" : "400";
-    if (item.type === "video") node.style.height = `${item.height ?? item.width * 9 / 16}%`;
-    else if (item.height !== undefined) node.style.height = `${item.height}%`;
-    if (item.type === "image" && item.height !== undefined) {
-      node.style.maxHeight = "none";
-      node.style.objectFit = "fill";
-    }
+    if (item.type === "video") node.style.height = `${item.width * 9 / 16}%`;
 
     if (item.type === "text") {
       node.textContent = item.text;
@@ -1012,9 +1007,27 @@ function renderSlideElementsInternal(index) {
         item.text = node.textContent.slice(0, 4000);
         saveSlideElements(index, getSlideElements(index).map((stored) => stored.id === item.id ? item : stored));
       });
+      
+      // Add special classes for custom text elements (sticky, icon)
+      if (item.background) {
+        node.classList.add("custom-element-sticky");
+        node.style.setProperty("--element-background", item.background);
+      }
+      if (item.text === "★" && item.size >= 5) {
+        node.classList.add("custom-element-icon");
+      }
     } else if (item.type === "shape") {
       node.classList.add(`custom-element-${item.shape}`);
-      node.style.height = `${item.height ?? (item.shape === "line" ? 1 : 18)}%`;
+      node.style.height = `${item.height || 18}%`;
+      
+      // Add special classes for custom shapes (arrow, chart)
+      if (item.shape === "line" && item.height && item.height <= 4) {
+        node.classList.add("custom-element-arrow");
+      }
+      if (item.shape === "rectangle" && item.opacity !== undefined) {
+        node.classList.add("custom-element-chart");
+        node.style.setProperty("--element-opacity", item.opacity);
+      }
     } else if (item.type === "image") {
       node.src = item.src;
       node.alt = item.alt || "Eingefügtes Bild";
@@ -1098,20 +1111,27 @@ function renderSlideElementsInternal(index) {
       const startX = event.clientX;
       const startY = event.clientY;
       const startWidth = item.width;
-      const startHeight = node.getBoundingClientRect().height / bounds.height * 100;
+      const startHeight = item.height || (item.type === "video" ? item.width * 9 / 16 : 18);
       node.classList.add("is-resizing");
       const move = (moveEvent) => {
         if (moveEvent.pointerId !== pointerId) return;
-        // Elemente sind zentriert: die Ecke soll dem Zeiger folgen, daher doppelter Anteil.
-        const deltaX = ((moveEvent.clientX - startX) / bounds.width) * 200;
-        const deltaY = ((moveEvent.clientY - startY) / bounds.height) * 200;
-        item.width = Math.min(100, Math.max(2, startWidth + deltaX));
-        item.height = Math.min(100, Math.max(1, startHeight + deltaY));
+        const deltaX = ((moveEvent.clientX - startX) / bounds.width) * 100;
+        const deltaY = ((moveEvent.clientY - startY) / bounds.height) * 100;
+        item.width = Math.min(90, Math.max(8, startWidth + (deltaX + deltaY) / 2));
         node.style.width = `${item.width}%`;
-        node.style.height = `${item.height}%`;
-        if (item.type === "image") {
-          node.style.maxHeight = "none";
-          node.style.objectFit = "fill";
+        if (item.type === "video") {
+          node.style.height = `${item.width * 9 / 16}%`;
+        } else if (item.type === "shape") {
+          item.height = Math.min(90, Math.max(5, startHeight + (deltaX + deltaY) / 2));
+          node.style.height = `${item.height}%`;
+        } else if (item.type === "image") {
+          // For images, maintain aspect ratio or allow free resize
+          item.height = Math.min(85, Math.max(10, startHeight + (deltaX + deltaY) / 2));
+          node.style.height = `${item.height}%`;
+        } else if (item.type === "text") {
+          // For text, scale font size
+          item.size = Math.min(7, Math.max(1.4, (item.size || 3) + (deltaX + deltaY) / 20));
+          node.style.setProperty("--element-size", item.size);
         }
       };
       const finish = (finishEvent) => {
@@ -1151,14 +1171,6 @@ function renderElementList() {
   debouncedRenderElementList();
 }
 
-function measureElementHeight(id) {
-  const slide = slides[activeIndex];
-  const node = slide?.querySelector(`[data-element-id="${CSS.escape(id)}"]`);
-  const slideHeight = slide?.getBoundingClientRect().height;
-  if (!node || !slideHeight) return 18;
-  return (node.getBoundingClientRect().height / slideHeight) * 100;
-}
-
 function renderElementListInternal() {
   const elements = getSlideElements(activeIndex);
   elementList.replaceChildren();
@@ -1187,14 +1199,14 @@ function renderElementListInternal() {
     elementColor.value = selected.color || "#ef3828";
     elementFontSize.value = String(selected.size || 3);
     elementWidth.value = String(selected.width);
-    if (elementHeight) elementHeight.value = String(Math.round((selected.height ?? measureElementHeight(selected.id)) * 10) / 10);
+    if (elementHeight) elementHeight.value = String(selected.height || (selected.type === "video" ? Math.round(selected.width * 9 / 16) : 18));
     fontSizeRow.hidden = selected.type !== "text";
     shapeTypeRow.hidden = selected.type !== "shape";
     fontFamilyRow.hidden = selected.type !== "text";
     textAlignRow.hidden = selected.type !== "text";
     boldRow.hidden = selected.type !== "text";
     const heightRow = document.querySelector("#height-row");
-    if (heightRow) heightRow.hidden = false;
+    if (heightRow) heightRow.hidden = !["shape", "image", "video"].includes(selected.type);
     if (selected.type === "shape") elementShapeType.value = selected.shape;
     if (selected.type === "text") {
       elementFontFamily.value = selected.family || "Arial, Helvetica, sans-serif";
@@ -1383,8 +1395,7 @@ function updateElementToolbarState(elements) {
   const multiSelect = false; // TODO: implement multi-select
   
   if (groupElementsBtn) groupElementsBtn.disabled = !multiSelect || elements.length < 2;
-  const selectedItem = elements.find((e) => e.id === selectedElementId);
-  if (ungroupElementsBtn) ungroupElementsBtn.disabled = !selectedItem?.groupId;
+  if (ungroupElementsBtn) ungroupElementsBtn.disabled = !hasSelection || !selectedElement?.groupId;
   
   // Alignment buttons
   const alignButtons = [alignLeftBtn, alignCenterBtn, alignRightBtn, alignTopBtn, alignMiddleBtn, alignBottomBtn];
@@ -1490,16 +1501,7 @@ function updateSelectedElement(update) {
     if (update.color) node.style.setProperty("--element-color", update.color);
     if (update.size) node.style.setProperty("--element-size", update.size);
     if (update.width) node.style.width = `${update.width}%`;
-    if (update.height !== undefined) {
-      node.style.height = `${update.height}%`;
-      if (selected.type === "image") {
-        node.style.maxHeight = "none";
-        node.style.objectFit = "fill";
-      }
-    }
-    if (update.width !== undefined && selected.type === "video") {
-      node.style.height = `${selected.height ?? selected.width * 9 / 16}%`;
-    }
+    if (update.height) node.style.height = `${update.height}%`;
     if (update.shape) {
       node.classList.remove("custom-element-rectangle", "custom-element-circle", "custom-element-line");
       node.classList.add(`custom-element-${update.shape}`);
@@ -2271,50 +2273,6 @@ function updateOpenRouterAssistantState() {
   openRouterModelInput.value = openRouterSettings.model;
   openRouterTemperatureInput.value = openRouterSettings.temperature.toFixed(1);
   openRouterTemperatureValue.value = openRouterSettings.temperature.toFixed(1);
-}
-
-function clearStoredOpenRouterApiKey() {
-  try {
-    localStorage.removeItem(OPENROUTER_API_KEY_KEY);
-    sessionStorage.removeItem(OPENROUTER_API_KEY_KEY);
-  } catch (error) {
-    console.error("Der NVIDIA API-Schlüssel konnte nicht entfernt werden.", error);
-  }
-}
-
-function saveOpenRouterSettings(event) {
-  event.preventDefault();
-  const previousSettings = { ...openRouterSettings };
-  const apiKey = openRouterApiKeyInput.value.trim();
-  const rememberKey = openRouterRememberKeyInput.checked;
-  const nextSettings = {
-    model: openRouterModelInput.value.trim() || OPENROUTER_MODEL_DEFAULT,
-    temperature: Math.min(1, Math.max(0, Number(openRouterTemperatureInput.value) || 0.4)),
-    rememberKey,
-  };
-  try {
-    localStorage.setItem(OPENROUTER_SETTINGS_KEY, JSON.stringify(nextSettings));
-    clearStoredOpenRouterApiKey();
-    if (apiKey) {
-      (rememberKey ? localStorage : sessionStorage).setItem(OPENROUTER_API_KEY_KEY, apiKey);
-    }
-  } catch (error) {
-    console.error("Die KI-Einstellungen konnten nicht gespeichert werden.", error);
-    openRouterSettingsStatus.textContent = "Einstellungen konnten nicht gespeichert werden.";
-    return;
-  }
-  openRouterSettings = nextSettings;
-  recordSettingsChange(previousSettings, nextSettings);
-  updateOpenRouterAssistantState();
-  openRouterSettingsStatus.textContent = apiKey ? "Gespeichert." : "Gespeichert. Ohne Schlüssel bleibt der Chat beratend deaktiviert.";
-  if (openRouterSettingsDialog.open) openRouterSettingsDialog.close();
-}
-
-function clearOpenRouterApiKey() {
-  clearStoredOpenRouterApiKey();
-  openRouterApiKeyInput.value = "";
-  updateOpenRouterAssistantState();
-  openRouterSettingsStatus.textContent = "Schlüssel entfernt.";
 }
 
 function openOpenRouterSettings() {
@@ -3470,120 +3428,124 @@ function colorToHex(color, fallback = "#171717") {
   return `#${match.slice(1, 4).map((part) => Number(part).toString(16).padStart(2, "0")).join("")}`;
 }
 
-const EXPORT_SLIDE_WIDTH_PT = 960;
-const EXPORT_SLIDE_HEIGHT_PT = 540;
-
-function primaryFontFamily(value, fallback = "Arial") {
-  return String(value || "").split(",")[0].replace(/["']/g, "").trim() || fallback;
-}
-
-function exportAlign(value) {
-  if (value === "center" || value === "ctr") return "ctr";
-  if (value === "right" || value === "r" || value === "end") return "r";
-  return "l";
-}
-
-// Liest clip-path: polygon(...) und liefert Eckpunkte als Anteile der Box (0–1).
-function parseClipPolygon(value, width, height) {
-  const match = /^polygon\((.*)\)$/.exec(String(value || "").trim());
-  if (!match || !width || !height) return null;
-  let parts = match[1].split(",").map((part) => part.trim());
-  if (/^(nonzero|evenodd)$/.test(parts[0]?.split(/\s+/)[0] || "")) parts[0] = parts[0].replace(/^(nonzero|evenodd)\s*/, "");
-  const toFraction = (token, size) => {
-    if (token.endsWith("%")) return parseFloat(token) / 100;
-    if (token.endsWith("px")) return parseFloat(token) / size;
-    return parseFloat(token) === 0 ? 0 : NaN;
-  };
-  const points = parts.map((pair) => {
-    const [xToken, yToken] = pair.split(/\s+/);
-    return [toFraction(xToken || "0", width), toFraction(yToken || "0", height)];
-  });
-  if (points.length < 3 || points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))) return null;
-  return points.map(([x, y]) => [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))]);
-}
-
-function exportShapeType(node, style, rect) {
-  if (node.classList.contains("circle")) return "circle";
-  if (node.classList.contains("line")) return "line";
-  const radius = style.borderTopLeftRadius || "0px";
-  const isPercent = radius.endsWith("%");
-  const value = parseFloat(radius) || 0;
-  if ((isPercent && value >= 50) || (!isPercent && value > 0 && value >= Math.min(rect.width, rect.height) / 2 - 0.5)) return "circle";
-  return "rectangle";
-}
-
-// Drehwinkel aus der berechneten Transformation in Grad (positiv = im Uhrzeigersinn, wie CSS).
-function getNodeRotation(node) {
-  const transform = getComputedStyle(node).transform;
-  const match = /^matrix\(([^)]+)\)$/.exec(transform || "");
-  if (!match) return 0;
-  const [a, b] = match[1].split(",").map(Number);
-  return Math.atan2(b, a) * 180 / Math.PI;
-}
-
-// Box eines Elements. Bei Drehung zählt die unverdrehte Größe, Position ist der Mittelpunkt.
-function getExportBox(node, rect, bounds) {
-  const rotation = getNodeRotation(node);
-  if (!rotation) {
-    return { box: { x: (rect.left - bounds.left) / bounds.width, y: (rect.top - bounds.top) / bounds.height, width: rect.width / bounds.width, height: rect.height / bounds.height }, rotation: 0 };
-  }
-  const width = node.offsetWidth;
-  const height = node.offsetHeight;
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  return {
-    box: { x: (cx - width / 2 - bounds.left) / bounds.width, y: (cy - height / 2 - bounds.top) / bounds.height, width: width / bounds.width, height: height / bounds.height },
-    rotation,
-  };
-}
-
-function nodeTextWithBreaks(node) {
-  return Array.from(node.childNodes)
-    .map((child) => (child.nodeName === "BR" ? "\n" : child.textContent))
-    .join("")
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-    .join("\n");
-}
-
 function getExportSlideData(slide, index, exportStage) {
   const bounds = exportStage.getBoundingClientRect();
-  // Schriftgrößen werden relativ zur Folienhöhe umgerechnet, damit sie unabhängig von der Fenstergröße gleich bleiben.
-  const pxToPt = EXPORT_SLIDE_HEIGHT_PT / bounds.height;
   const background = colorToHex(getComputedStyle(slide).backgroundColor, "#eeece5");
-  const toBox = (rect) => ({
-    x: (rect.left - bounds.left) / bounds.width,
-    y: (rect.top - bounds.top) / bounds.height,
-    width: rect.width / bounds.width,
-    height: rect.height / bounds.height,
-  });
-  const outsideCustomLayer = (node) => !node.closest(".custom-layer");
-
-  // 1. Flächen des Layouts (Dekorationen, Spalten, Platzhalter, Grundformen) liegen unten.
-  const layoutShapes = [];
-  const seenShapes = new Set();
-  slide.querySelectorAll(".layout-decorations > *, .layout-column, .layout-column-one, .layout-column-two, .layout-image-placeholder, .layout-video-placeholder, .shape, .slide-sticker").forEach((node) => {
-    if (seenShapes.has(node) || !outsideCustomLayer(node)) return;
-    seenShapes.add(node);
+  const items = [];
+  
+  // Capture layout decorations (template-specific visual elements)
+  slide.querySelectorAll(".layout-decorations > *").forEach((node) => {
     const rect = node.getBoundingClientRect();
     const style = getComputedStyle(node);
     const fill = colorToHex(style.backgroundColor, "");
-    if (!fill || (fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)")) return;
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
     if (rect.width < 2 || rect.height < 2) return;
-    const points = parseClipPolygon(style.clipPath, rect.width, rect.height);
-    const { box, rotation } = getExportBox(node, rect, bounds);
-    layoutShapes.push({ type: "shape", ...box, rotation, fill, opacity: 1, shape: exportShapeType(node, style, rect), points });
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: node.classList.contains("circle") ? "circle" : 
+             node.classList.contains("line") ? "line" : "rectangle",
+    });
   });
 
-  // 2. Text des Layouts (eigene Elemente werden unten separat behandelt).
-  const layoutTexts = [];
+  // Capture layout columns
+  slide.querySelectorAll(".layout-column, .layout-column-one, .layout-column-two").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: "rectangle",
+    });
+  });
+
+  // Capture layout placeholders (image, video)
+  slide.querySelectorAll(".layout-image-placeholder, .layout-video-placeholder").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: "rectangle",
+    });
+  });
+
+  // Capture custom elements (shapes, sticky notes, arrows, icons, charts)
+  slide.querySelectorAll(".custom-element-shape, .custom-element-sticky, .custom-element-arrow, .custom-element-icon, .custom-element-chart").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    
+    let shapeType = "rectangle";
+    if (node.classList.contains("custom-element-shape")) {
+      if (node.classList.contains("circle")) shapeType = "circle";
+      else if (node.classList.contains("line")) shapeType = "line";
+    } else if (node.classList.contains("custom-element-sticky")) {
+      shapeType = "rectangle";
+    } else if (node.classList.contains("custom-element-arrow")) {
+      shapeType = "line";
+    } else if (node.classList.contains("custom-element-icon")) {
+      shapeType = "circle";
+    } else if (node.classList.contains("custom-element-chart")) {
+      shapeType = "rectangle";
+    }
+    
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: shapeType,
+    });
+  });
+
+  // Capture all shapes (including basic shapes)
+  slide.querySelectorAll(".shape:not(.layout-decorations > *):not(.layout-column):not(.layout-column-one):not(.layout-column-two):not(.layout-image-placeholder):not(.layout-video-placeholder):not(.custom-element-shape):not(.custom-element-sticky):not(.custom-element-arrow):not(.custom-element-icon):not(.custom-element-chart)").forEach((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    const fill = colorToHex(style.backgroundColor, "");
+    if (!fill || fill === "#000000" && style.backgroundColor === "rgba(0, 0, 0, 0)") return;
+    if (rect.width < 2 || rect.height < 2) return;
+    items.push({
+      type: "shape",
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
+      height: rect.height / bounds.height,
+      fill,
+      shape: node.classList.contains("circle") ? "circle" : 
+             node.classList.contains("line") ? "line" : "rectangle",
+    });
+  });
+
   const walker = document.createTreeWalker(slide, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const textNode = walker.currentNode;
     const text = textNode.textContent.replace(/\s+/g, " ").trim();
     const parent = textNode.parentElement;
-    if (!text || !parent || parent.closest("[aria-hidden='true'], [hidden], script, style, .custom-layer, .slide-sticker")) continue;
+    if (!text || !parent || parent.closest("[aria-hidden='true'], [hidden], script, style")) continue;
     const range = document.createRange();
     range.selectNodeContents(textNode);
     const rect = range.getBoundingClientRect();
@@ -3591,7 +3553,7 @@ function getExportSlideData(slide, index, exportStage) {
     const parentRect = parent.getBoundingClientRect();
     const style = getComputedStyle(parent);
     const left = Math.max(bounds.left, rect.left);
-    layoutTexts.push({
+    items.push({
       type: "text",
       text,
       x: (left - bounds.left) / bounds.width,
@@ -3599,43 +3561,14 @@ function getExportSlideData(slide, index, exportStage) {
       width: Math.max(rect.width, parentRect.right - left) / bounds.width,
       height: Math.max(rect.height, parentRect.height) / bounds.height,
       color: colorToHex(style.color),
-      fontSize: Math.max(6, (parseFloat(style.fontSize) || 16) * pxToPt),
-      fontFamily: primaryFontFamily(style.fontFamily),
+      fontSize: Math.max(8, parseFloat(style.fontSize) || 16) * 0.75,
+      fontFamily: style.fontFamily.split(",")[0].replace(/["']/g, "").trim() || "Arial",
       bold: Number.parseInt(style.fontWeight, 10) >= 600 || style.fontWeight === "bold",
-      align: exportAlign(style.textAlign),
-      lineHeight: 1,
-      padEm: 0,
+      align: style.textAlign === "center" ? "ctr" : style.textAlign === "right" ? "r" : "l",
     });
   }
 
-  // 2b. Sticker (z. B. gedrehter Stempel): Text als eine zentrierte, gedrehte Box.
-  slide.querySelectorAll(".slide-sticker").forEach((node) => {
-    if (!outsideCustomLayer(node)) return;
-    const text = nodeTextWithBreaks(node);
-    if (!text) return;
-    const rect = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
-    const { box, rotation } = getExportBox(node, rect, bounds);
-    const lineRatio = parseFloat(style.lineHeight) / (parseFloat(style.fontSize) || 16);
-    layoutTexts.push({
-      type: "text",
-      text,
-      ...box,
-      rotation,
-      color: colorToHex(style.color),
-      fontSize: Math.max(6, (parseFloat(style.fontSize) || 16) * pxToPt),
-      fontFamily: primaryFontFamily(style.fontFamily),
-      bold: Number.parseInt(style.fontWeight, 10) >= 600 || style.fontWeight === "bold",
-      align: exportAlign(style.textAlign === "start" ? "center" : style.textAlign),
-      anchor: "ctr",
-      lineHeight: Number.isFinite(lineRatio) ? Math.min(2, Math.max(0.8, lineRatio)) : 1.15,
-      padEm: 0,
-    });
-  });
-
-  // 3. Platzhalter für 3D-Modelle und eingebettete Medien aus dem Layout.
   slide.querySelectorAll("img[alt], iframe, model-viewer:not([hidden])").forEach((node) => {
-    if (!outsideCustomLayer(node)) return;
     const rect = node.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) return;
     const description = node instanceof HTMLImageElement
@@ -3643,69 +3576,25 @@ function getExportSlideData(slide, index, exportStage) {
       : node instanceof HTMLIFrameElement
         ? `Video: ${node.title || "Eingebettetes Video"} (Video-Link in der exportierten Präsentation erneut einfügen)`
         : "3D-Modell: in der exportierten Präsentation als Bild neu einfügen";
-    layoutTexts.push({
+    items.push({
       type: "text",
       text: description,
-      ...toBox(rect),
+      x: (rect.left - bounds.left) / bounds.width,
+      y: (rect.top - bounds.top) / bounds.height,
+      width: rect.width / bounds.width,
       height: Math.max(0.06, rect.height / bounds.height),
       color: "#57554f",
       fontSize: 13,
       fontFamily: "Arial",
       bold: false,
       align: "ctr",
-      lineHeight: 1,
-      padEm: 0,
     });
-  });
-
-  // 4. Eigene Elemente: Inhalt aus den gespeicherten Daten, Position aus dem tatsächlichen Stage-Layout.
-  const storedElements = getSlideElements(index);
-  const customItems = [];
-  slide.querySelectorAll(".custom-layer > .custom-element").forEach((node) => {
-    const item = storedElements.find((entry) => entry.id === node.dataset.elementId);
-    if (!item) return;
-    const rect = node.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) return;
-    const box = toBox(rect);
-    if (item.type === "text") {
-      if (!item.text) return;
-      customItems.push({
-        type: "text",
-        ...box,
-        text: item.text,
-        color: item.color || "#ef3828",
-        fontSize: (item.size || 3) * EXPORT_SLIDE_WIDTH_PT / 100,
-        fontFamily: primaryFontFamily(item.family),
-        bold: Boolean(item.bold),
-        align: exportAlign(item.align),
-        lineHeight: 1.15,
-        padEm: 0.2,
-      });
-    } else if (item.type === "shape") {
-      customItems.push({ type: "shape", ...box, fill: item.color || "#ef3828", opacity: 0.85, shape: item.shape || "rectangle" });
-    } else if (item.type === "image") {
-      customItems.push({ type: "image", ...box, src: item.src, alt: item.alt || "Eingefügtes Bild" });
-    } else if (item.type === "video") {
-      customItems.push({ type: "shape", ...box, fill: "#d7d4ca", opacity: 1, shape: "rectangle" });
-      customItems.push({
-        type: "text",
-        ...box,
-        text: "Video: Link in der exportierten Präsentation erneut einfügen",
-        color: "#57554f",
-        fontSize: 13,
-        fontFamily: "Arial",
-        bold: false,
-        align: "ctr",
-        lineHeight: 1,
-        padEm: 0,
-      });
-    }
   });
 
   return {
     title: `Folie ${String(index + 1).padStart(2, "0")}`,
     background,
-    items: [...layoutShapes, ...layoutTexts, ...customItems],
+    items: items.sort((a, b) => (a.type === "shape" ? -1 : 1) - (b.type === "shape" ? -1 : 1)),
   };
 }
 
@@ -3729,61 +3618,6 @@ function getExportData() {
   } finally {
     exportStage.remove();
   }
-}
-
-function base64ToBytes(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-// PNG und JPEG werden unverändert übernommen, WebP wird für PowerPoint und Impress in PNG umgewandelt.
-async function toExportImage(src) {
-  const match = /^data:(image\/(png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(src || "");
-  if (!match) return null;
-  if (match[1] !== "image/webp") {
-    return { bytes: base64ToBytes(match[3]), mime: match[1], ext: match[2] === "png" ? "png" : "jpeg" };
-  }
-  try {
-    const image = new Image();
-    image.src = src;
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    canvas.getContext("2d").drawImage(image, 0, 0);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (!blob) return null;
-    return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: "image/png", ext: "png" };
-  } catch {
-    return null;
-  }
-}
-
-async function prepareExportImages(slides) {
-  for (const slide of slides) {
-    for (const item of slide.items) {
-      if (item.type !== "image") continue;
-      const converted = await toExportImage(item.src);
-      if (converted) {
-        Object.assign(item, converted);
-      } else {
-        Object.assign(item, {
-          type: "text",
-          text: `Bild: ${item.alt}`,
-          color: "#57554f",
-          fontSize: 13,
-          fontFamily: "Arial",
-          bold: false,
-          align: "ctr",
-          lineHeight: 1,
-          padEm: 0,
-        });
-      }
-    }
-  }
-  return slides;
 }
 
 function zipU16(value) {
@@ -3851,211 +3685,111 @@ function slideShapeId(index) {
   return index + 2;
 }
 
-const PPTX_EMU_WIDTH = 12192000;
-const PPTX_EMU_HEIGHT = 6858000;
-const OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-const PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
-const DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
-const PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
-
-function pptxFillXml(item) {
-  const alpha = item.opacity !== undefined && item.opacity < 1 ? `<a:alpha val="${Math.round(item.opacity * 100000)}"/>` : "";
-  return `<a:solidFill><a:srgbClr val="${item.fill.slice(1).toUpperCase()}">${alpha}</a:srgbClr></a:solidFill>`;
-}
-
 function pptxTextShape(item, shapeId) {
-  const x = Math.round(item.x * PPTX_EMU_WIDTH);
-  const y = Math.round(item.y * PPTX_EMU_HEIGHT);
-  const cx = Math.max(1, Math.round(item.width * PPTX_EMU_WIDTH));
-  const cy = Math.max(1, Math.round(item.height * PPTX_EMU_HEIGHT));
-  const isText = item.type === "text";
-  const rotAttr = item.rotation ? ` rot="${Math.round((((item.rotation % 360) + 360) % 360) * 60000)}"` : "";
-  let geometry = `<a:prstGeom prst="${item.shape === "circle" ? "ellipse" : "rect"}"><a:avLst/></a:prstGeom>`;
-  if (item.points) {
-    const scale = (value) => Math.min(100000, Math.max(0, Math.round(value * 100000)));
-    const [first, ...rest] = item.points;
-    const moveTo = `<a:moveTo><a:pt x="${scale(first[0])}" y="${scale(first[1])}"/></a:moveTo>`;
-    const lines = rest.map(([px, py]) => `<a:lnTo><a:pt x="${scale(px)}" y="${scale(py)}"/></a:lnTo>`).join("");
-    geometry = `<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="r" b="b"/><a:pathLst><a:path w="100000" h="100000">${moveTo}${lines}<a:close/></a:path></a:pathLst></a:custGeom>`;
-  }
-  let body = "";
-  if (isText) {
-    const size = Math.min(400000, Math.max(100, Math.round(item.fontSize * 100)));
-    const insetX = Math.round((item.padEm || 0) * item.fontSize * 12700);
-    const insetY = Math.round((item.padEm || 0) * 0.5 * item.fontSize * 12700);
-    const paragraphs = item.text.split("\n").map((line) => {
-      const run = `<a:r><a:rPr lang="de-DE" sz="${size}"${item.bold ? ' b="1"' : ""}><a:solidFill><a:srgbClr val="${item.color.slice(1).toUpperCase()}"/></a:solidFill><a:latin typeface="${escapeXml(item.fontFamily)}"/></a:rPr><a:t>${escapeXml(line)}</a:t></a:r>`;
-      return `<a:p><a:pPr algn="${item.align}"><a:lnSpc><a:spcPct val="${Math.round((item.lineHeight || 1) * 100000)}"/></a:lnSpc></a:pPr>${run}</a:p>`;
-    }).join("");
-    body = `<p:txBody><a:bodyPr wrap="square" lIns="${insetX}" tIns="${insetY}" rIns="0" bIns="0" anchor="${item.anchor === "ctr" ? "ctr" : "t"}"><a:noAutofit/></a:bodyPr><a:lstStyle/>${paragraphs}</p:txBody>`;
-  }
-  const fill = isText ? "<a:noFill/>" : pptxFillXml(item);
-  return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${isText ? "Text" : "Form"} ${shapeId}"/><p:cNvSpPr${isText ? ' txBox="1"' : ""}/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm${rotAttr}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>${geometry}${fill}<a:ln><a:noFill/></a:ln></p:spPr>${body}</p:sp>`;
-}
-
-function pptxPictureShape(item, shapeId, relId) {
-  const x = Math.round(item.x * PPTX_EMU_WIDTH);
-  const y = Math.round(item.y * PPTX_EMU_HEIGHT);
-  const cx = Math.max(1, Math.round(item.width * PPTX_EMU_WIDTH));
-  const cy = Math.max(1, Math.round(item.height * PPTX_EMU_HEIGHT));
-  return `<p:pic><p:nvPicPr><p:cNvPr id="${shapeId}" name="Bild ${shapeId}" descr="${escapeXml(item.alt || "")}"/><p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm${item.rotation ? ` rot="${Math.round((((item.rotation % 360) + 360) % 360) * 60000)}"` : ""}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+  const x = Math.round(item.x * 12192000);
+  const y = Math.round(item.y * 6858000);
+  const cx = Math.max(1, Math.round(item.width * 12192000));
+  const cy = Math.max(1, Math.round(item.height * 6858000));
+  
+  // Determine shape geometry
+  let prstGeom = "rect";
+  if (item.shape === "circle") prstGeom = "ellipse";
+  else if (item.shape === "line") prstGeom = "rect"; // line is a thin rect
+  
+  const paragraphs = item.type === "shape"
+    ? ""
+    : item.text.split("\n").map((line) => `<a:p><a:pPr algn="${item.align}"/><a:r><a:rPr lang="de-DE" sz="${Math.round(item.fontSize * 100)}"${item.bold ? ' b="1"' : ""}><a:solidFill><a:srgbClr val="${item.color.slice(1)}"/></a:solidFill><a:latin typeface="${escapeXml(item.fontFamily)}"/></a:rPr><a:t xml:space="preserve">${escapeXml(line)}</a:t></a:r><a:endParaRPr lang="de-DE"/></a:p>`).join("");
+  
+  const fill = item.type === "shape"
+    ? `<a:solidFill><a:srgbClr val="${item.fill.slice(1)}"/></a:solidFill>`
+    : "<a:noFill/>";
+  
+  // For line shapes, make them thin
+  const lineHeight = item.shape === "line" ? Math.max(1, Math.round(cy * 0.02)) : cy;
+  const lineY = item.shape === "line" ? y + Math.round(cy / 2) - Math.round(lineHeight / 2) : y;
+  
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${shapeId}" name="${item.type === "shape" ? "Form" : `Text ${shapeId}`}"/><p:cNvSpPr txBox="${item.type === "text" ? 1 : 0}"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${item.shape === "line" ? lineY : y}"/><a:ext cx="${cx}" cy="${item.shape === "line" ? lineHeight : cy}"/></a:xfrm><a:prstGeom prst="${prstGeom}"><a:avLst/></a:prstGeom>${fill}<a:ln><a:noFill/></a:ln></p:spPr>${item.type === "text" ? `<p:txBody><a:bodyPr wrap="square" lIns="0" rIns="0" tIns="0" bIns="0" anchor="t"/><a:lstStyle/>${paragraphs}</p:txBody>` : ""}</p:sp>`;
 }
 
 function createPptx(slideData) {
-  const media = [];
-  const slideParts = [];
-  const slideRelParts = [];
-  slideData.forEach((slide, index) => {
-    const rels = [`<Relationship Id="rId1" Type="${OFFICE_REL_NS}/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>`];
-    let nextRel = 2;
-    const shapes = slide.items.map((item, itemIndex) => {
-      const shapeId = slideShapeId(itemIndex);
-      if (item.type === "image") {
-        const relId = `rId${nextRel}`;
-        nextRel += 1;
-        const mediaName = `image${media.length + 1}.${item.ext}`;
-        media.push({ name: `ppt/media/${mediaName}`, contents: item.bytes });
-        rels.push(`<Relationship Id="${relId}" Type="${OFFICE_REL_NS}/image" Target="../media/${mediaName}"/>`);
-        return pptxPictureShape(item, shapeId, relId);
-      }
-      return pptxTextShape(item, shapeId);
-    }).join("");
-    slideRelParts.push({
-      name: `ppt/slides/_rels/slide${index + 1}.xml.rels`,
-      contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PACKAGE_REL_NS}">${rels.join("")}</Relationships>`,
-    });
-    slideParts.push({
-      name: `ppt/slides/slide${index + 1}.xml`,
-      contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="${DRAWING_NS}" xmlns:r="${OFFICE_REL_NS}" xmlns:p="${PRESENTATION_NS}"><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="${slide.background.slice(1).toUpperCase()}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`,
-    });
-  });
-
   const slideIds = slideData.map((_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`).join("");
-  const presentationRels = slideData.map((_, index) => `<Relationship Id="rId${index + 2}" Type="${OFFICE_REL_NS}/slide" Target="slides/slide${index + 1}.xml"/>`).join("");
-  const slideOverrides = slideData.map((_, index) => `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
-  const types = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slideOverrides}</Types>`;
-
-  // Ein Theme braucht je drei Füll-, Linien-, Effekt- und Hintergrundstile, sonst meldet PowerPoint einen Reparaturbedarf.
-  const themeFill = '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>';
-  const themeLine = `<a:ln w="6350" cap="flat" cmpd="sng" algn="ctr">${themeFill}<a:prstDash val="solid"/></a:ln>`;
-  const themeEffect = "<a:effectStyle><a:effectLst/></a:effectStyle>";
-  const theme = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="${DRAWING_NS}" name="GFS Studio"><a:themeElements><a:clrScheme name="GFS"><a:dk1><a:srgbClr val="171717"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="57554F"/></a:dk2><a:lt2><a:srgbClr val="EEECE5"/></a:lt2><a:accent1><a:srgbClr val="EF3828"/></a:accent1><a:accent2><a:srgbClr val="4D86A2"/></a:accent2><a:accent3><a:srgbClr val="64815C"/></a:accent3><a:accent4><a:srgbClr val="D7D4CA"/></a:accent4><a:accent5><a:srgbClr val="85837D"/></a:accent5><a:accent6><a:srgbClr val="C3C0B9"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="GFS"><a:majorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="GFS"><a:fillStyleLst>${themeFill.repeat(3)}</a:fillStyleLst><a:lnStyleLst>${themeLine.repeat(3)}</a:lnStyleLst><a:effectStyleLst>${themeEffect.repeat(3)}</a:effectStyleLst><a:bgFillStyleLst>${themeFill.repeat(3)}</a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>`;
-
-  const masterId = 2147483648;
-  const layoutId = 2147483649;
+  const rels = slideData.map((_, index) => `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`).join("");
+  const slideXml = slideData.map((slide, index) => {
+    const shapes = slide.items.map((item, itemIndex) => pptxTextShape(item, slideShapeId(itemIndex))).join("");
+    return {
+      name: `ppt/slides/slide${index + 1}.xml`,
+      contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="${slide.background.slice(1)}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`,
+    };
+  });
+  const types = `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slideData.map((_, index) => `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}</Types>`;
+  const theme = `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="GFS Studio"><a:themeElements><a:clrScheme name="GFS"><a:dk1><a:srgbClr val="171717"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="57554F"/></a:dk2><a:lt2><a:srgbClr val="EEECE5"/></a:lt2><a:accent1><a:srgbClr val="EF3828"/></a:accent1><a:accent2><a:srgbClr val="4D86A2"/></a:accent2><a:accent3><a:srgbClr val="64815C"/></a:accent3><a:accent4><a:srgbClr val="D7D4CA"/></a:accent4><a:accent5><a:srgbClr val="85837D"/></a:accent5><a:accent6><a:srgbClr val="C3C0B9"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="GFS"><a:majorFont><a:latin typeface="Arial"/></a:majorFont><a:minorFont><a:latin typeface="Arial"/></a:minorFont></a:fontScheme><a:fmtScheme name="GFS"><a:fillStyleLst><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>`;
   return createZip([
     { name: "[Content_Types].xml", contents: types },
-    { name: "_rels/.rels", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PACKAGE_REL_NS}"><Relationship Id="rId1" Type="${OFFICE_REL_NS}/officeDocument" Target="ppt/presentation.xml"/></Relationships>` },
-    { name: "ppt/presentation.xml", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="${DRAWING_NS}" xmlns:r="${OFFICE_REL_NS}" xmlns:p="${PRESENTATION_NS}"><p:sldMasterIdLst><p:sldMasterId id="${masterId}" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="${PPTX_EMU_WIDTH}" cy="${PPTX_EMU_HEIGHT}"/><p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle><a:defPPr><a:defRPr lang="de-DE"/></a:defPPr></p:defaultTextStyle></p:presentation>` },
-    { name: "ppt/_rels/presentation.xml.rels", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PACKAGE_REL_NS}"><Relationship Id="rId1" Type="${OFFICE_REL_NS}/slideMaster" Target="slideMasters/slideMaster1.xml"/>${presentationRels}</Relationships>` },
-    { name: "ppt/slideMasters/slideMaster1.xml", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster xmlns:a="${DRAWING_NS}" xmlns:r="${OFFICE_REL_NS}" xmlns:p="${PRESENTATION_NS}"><p:cSld><p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="${layoutId}" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr/></a:lvl1pPr></p:titleStyle><p:bodyStyle><a:lvl1pPr><a:defRPr/></a:lvl1pPr></p:bodyStyle><p:otherStyle><a:lvl1pPr><a:defRPr/></a:lvl1pPr></p:otherStyle></p:txStyles></p:sldMaster>` },
-    { name: "ppt/slideMasters/_rels/slideMaster1.xml.rels", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PACKAGE_REL_NS}"><Relationship Id="rId1" Type="${OFFICE_REL_NS}/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="${OFFICE_REL_NS}/theme" Target="../theme/theme1.xml"/></Relationships>` },
-    { name: "ppt/slideLayouts/slideLayout1.xml", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:a="${DRAWING_NS}" xmlns:r="${OFFICE_REL_NS}" xmlns:p="${PRESENTATION_NS}" type="blank" preserve="1"><p:cSld name="Leer"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>` },
-    { name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${PACKAGE_REL_NS}"><Relationship Id="rId1" Type="${OFFICE_REL_NS}/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>` },
+    { name: "_rels/.rels", contents: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>' },
+    { name: "ppt/presentation.xml", contents: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000" type="screen16x9"/><p:notesSz cx="6858000" cy="9144000"/><p:defaultTextStyle/></p:presentation>` },
+    { name: "ppt/_rels/presentation.xml.rels", contents: `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${rels}</Relationships>` },
+    { name: "ppt/slideMasters/slideMaster1.xml", contents: '<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" folHlink="folHlink" hlink="hlink" tx1="dk1" tx2="dk2"/><p:sldLayoutIdLst><p:sldLayoutId id="1" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>' },
+    { name: "ppt/slideMasters/_rels/slideMaster1.xml.rels", contents: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>' },
+    { name: "ppt/slideLayouts/slideLayout1.xml", contents: '<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>' },
+    { name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", contents: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>' },
     { name: "ppt/theme/theme1.xml", contents: theme },
-    ...slideParts,
-    ...slideRelParts,
-    ...media,
+    ...slideXml,
   ]);
 }
 
-function odpShapeStyleName(item) {
-  return `shape${item.fill.slice(1).toUpperCase()}${Math.round((item.opacity ?? 1) * 100)}`;
-}
-
-// Drehung um den Mittelpunkt: zum Ursprung verschieben, drehen (ODF: negativer Winkel = Uhrzeigersinn), zurückschieben.
-function odpRotationAttr(item) {
-  if (!item.rotation) return "";
-  const cx = (item.x * 33.867 + (item.width * 33.867) / 2).toFixed(4);
-  const cy = (item.y * 19.05 + (item.height * 19.05) / 2).toFixed(4);
-  const angle = (-item.rotation * Math.PI / 180).toFixed(6);
-  return ` draw:transform="translate (-${cx}cm -${cy}cm) rotate (${angle}) translate (${cx}cm ${cy}cm)"`;
-}
-
-function odpItem(item, pageIndex, itemIndex) {
+function odpTextFrame(item, pageIndex, itemIndex) {
   const x = (item.x * 33.867).toFixed(3);
   const y = (item.y * 19.05).toFixed(3);
-  const width = Math.max(0.05, item.width * 33.867).toFixed(3);
-  const height = Math.max(0.05, item.height * 19.05).toFixed(3);
-  const position = `svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"${odpRotationAttr(item)}`;
+  const width = Math.max(0.1, item.width * 33.867).toFixed(3);
+  const height = Math.max(0.1, item.height * 19.05).toFixed(3);
+  
   if (item.type === "shape") {
-    const style = odpShapeStyleName(item);
-    if (item.points) {
-      // LibreOffice passt Pfade an ihre Bounding Box an. Rahmen und viewBox daher auf die Punkte selbst zuschneiden.
-      const xs = item.points.map(([px]) => px);
-      const ys = item.points.map(([, py]) => py);
-      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-      const spanX = Math.max(maxX - minX, 1e-4), spanY = Math.max(maxY - minY, 1e-4);
-      const frameX = (item.x + minX * item.width) * 33.867;
-      const frameY = (item.y + minY * item.height) * 19.05;
-      const frameW = Math.max(0.05, spanX * item.width * 33.867);
-      const frameH = Math.max(0.05, spanY * item.height * 19.05);
-      const viewWidth = Math.max(1, Math.round(frameW * 100));
-      const viewHeight = Math.max(1, Math.round(frameH * 100));
-      const scaleX = (value) => Math.round(((value - minX) / spanX) * viewWidth);
-      const scaleY = (value) => Math.round(((value - minY) / spanY) * viewHeight);
-      const [first, ...rest] = item.points;
-      const d = [`M ${scaleX(first[0])} ${scaleY(first[1])}`, ...rest.map(([px, py]) => `L ${scaleX(px)} ${scaleY(py)}`), "Z"].join(" ");
-      const framePosition = `svg:x="${frameX.toFixed(3)}cm" svg:y="${frameY.toFixed(3)}cm" svg:width="${frameW.toFixed(3)}cm" svg:height="${frameH.toFixed(3)}cm"${odpRotationAttr(item)}`;
-      return `<draw:path draw:style-name="${style}" ${framePosition} svg:viewBox="0 0 ${viewWidth} ${viewHeight}" svg:d="${d}"/>`;
+    const shapeStyle = `shape${item.fill.slice(1)}`;
+    if (item.shape === "circle") {
+      return `<draw:ellipse draw:style-name="${shapeStyle}" svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"/>`;
+    } else if (item.shape === "line") {
+      // Line is a thin rectangle
+      const lineHeight = Math.max(0.05, height * 0.02).toFixed(3);
+      const lineY = (parseFloat(y) + parseFloat(height) / 2 - parseFloat(lineHeight) / 2).toFixed(3);
+      return `<draw:rect draw:style-name="${shapeStyle}" svg:x="${x}cm" svg:y="${lineY}cm" svg:width="${width}cm" svg:height="${lineHeight}cm"/>`;
+    } else {
+      return `<draw:rect draw:style-name="${shapeStyle}" svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"/>`;
     }
-    return item.shape === "circle"
-      ? `<draw:ellipse draw:style-name="${style}" ${position}/>`
-      : `<draw:rect draw:style-name="${style}" ${position}/>`;
   }
-  const name = `t${pageIndex}_${itemIndex}`;
-  const paragraphs = item.text.split("\n").map((line) => `<text:p text:style-name="p${name}"><text:span text:style-name="${name}">${escapeXml(line)}</text:span></text:p>`).join("");
-  return `<draw:frame draw:style-name="g${name}" ${position}><draw:text-box>${paragraphs}</draw:text-box></draw:frame>`;
+  const styleName = `t${pageIndex}_${itemIndex}`;
+  const paragraphs = item.text.split("\n").map((line) => `<text:p text:style-name="p${styleName}"><text:span text:style-name="${styleName}">${escapeXml(line)}</text:span></text:p>`).join("");
+  return `<draw:frame draw:style-name="textFrame" svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"><draw:text-box>${paragraphs}</draw:text-box></draw:frame>`;
 }
 
 function createOdp(slideData, template) {
-  const media = [];
   const pageStyles = slideData.map((slide, index) => `<style:style style:name="dp${index + 1}" style:family="drawing-page"><style:drawing-page-properties draw:fill="solid" draw:fill-color="${slide.background}"/></style:style>`).join("");
   const textStyles = slideData.flatMap((slide, pageIndex) => slide.items.flatMap((item, itemIndex) => {
     if (item.type !== "text") return [];
     const name = `t${pageIndex}_${itemIndex}`;
     const align = item.align === "ctr" ? "center" : item.align === "r" ? "end" : "start";
-    const padX = (item.padEm || 0) * item.fontSize;
-    const padY = (item.padEm || 0) * 0.5 * item.fontSize;
     return [
-      `<style:style style:name="p${name}" style:family="paragraph"><style:paragraph-properties fo:text-align="${align}" fo:line-height="${Math.round((item.lineHeight || 1) * 100)}%"/></style:style>`,
+      `<style:style style:name="p${name}" style:family="paragraph"><style:paragraph-properties fo:text-align="${align}"/></style:style>`,
       `<style:style style:name="${name}" style:family="text"><style:text-properties fo:font-family="${escapeXml(item.fontFamily)}" fo:font-size="${item.fontSize.toFixed(2)}pt" fo:font-weight="${item.bold ? "bold" : "normal"}" fo:color="${item.color}"/></style:style>`,
-      `<style:style style:name="g${name}" style:family="graphic"><style:graphic-properties draw:fill="none" draw:stroke="none" fo:padding-left="${padX.toFixed(2)}pt" fo:padding-right="0cm" fo:padding-top="${padY.toFixed(2)}pt" fo:padding-bottom="0cm" fo:wrap-option="wrap" draw:auto-grow-height="false" draw:textarea-vertical-align="${item.anchor === "ctr" ? "middle" : "top"}"/></style:style>`,
     ];
   })).join("");
-  const shapeStyleSource = new Map();
-  slideData.forEach((slide) => slide.items.forEach((item) => {
-    if (item.type !== "shape") return;
-    const name = odpShapeStyleName(item);
-    if (!shapeStyleSource.has(name)) shapeStyleSource.set(name, item);
-  }));
-  const shapeStyles = Array.from(shapeStyleSource, ([name, item]) => `<style:style style:name="${name}" style:family="graphic"><style:graphic-properties draw:fill="solid" draw:fill-color="${item.fill}" draw:opacity="${Math.round((item.opacity ?? 1) * 100)}%" draw:stroke="none"/></style:style>`).join("");
-  const pages = slideData.map((slide, pageIndex) => {
-    const pageItems = slide.items.map((item, itemIndex) => {
-      if (item.type !== "image") return odpItem(item, pageIndex, itemIndex);
-      const path = `Pictures/image${media.length + 1}.${item.ext}`;
-      media.push({ name: path, contents: item.bytes, mime: item.mime });
-      const x = (item.x * 33.867).toFixed(3);
-      const y = (item.y * 19.05).toFixed(3);
-      const width = Math.max(0.05, item.width * 33.867).toFixed(3);
-      const height = Math.max(0.05, item.height * 19.05).toFixed(3);
-      return `<draw:frame draw:name="Bild ${media.length}" svg:x="${x}cm" svg:y="${y}cm" svg:width="${width}cm" svg:height="${height}cm"><draw:image xlink:href="${path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>`;
-    }).join("");
-    return `<draw:page draw:name="${escapeXml(slide.title)}" draw:style-name="dp${pageIndex + 1}" draw:master-page-name="Default">${pageItems}</draw:page>`;
+  const shapeStyles = Array.from(new Set(slideData.flatMap((slide) => slide.items.filter((item) => item.type === "shape").map((item) => item.fill))))
+    .map((fill) => `<style:style style:name="shape${fill.slice(1)}" style:family="graphic"><style:graphic-properties draw:fill="solid" draw:fill-color="${fill}" draw:stroke="none"/></style:style>`).join("");
+  const graphicStyles = `${shapeStyles}<style:style style:name="textFrame" style:family="graphic"><style:graphic-properties draw:fill="none" draw:stroke="none"/></style:style>`;
+  const pages = slideData.map((slide, index) => {
+    const pageItems = slide.items.map((item, itemIndex) => odpTextFrame(item, index, itemIndex)).join("");
+    return `<draw:page draw:name="${escapeXml(slide.title)}" draw:style-name="dp${index + 1}" draw:master-page-name="Default">${pageItems}</draw:page>`;
   }).join("");
-  const content = `<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" office:version="1.3"><office:automatic-styles>${pageStyles}${textStyles}${shapeStyles}</office:automatic-styles><office:body><office:presentation>${pages}</office:presentation></office:body></office:document-content>`;
+  const content = `<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" office:version="1.3"><office:automatic-styles>${pageStyles}${textStyles}${graphicStyles}</office:automatic-styles><office:body><office:presentation>${pages}</office:presentation></office:body></office:document-content>`;
   const styles = '<?xml version="1.0" encoding="UTF-8"?><office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" office:version="1.3"><office:styles/><office:automatic-styles><style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="33.867cm" fo:page-height="19.05cm" style:print-orientation="landscape" presentation:display-header="false" presentation:display-footer="false" presentation:display-page-number="false" presentation:display-date-time="false"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1"/></office:master-styles></office:document-styles>';
-  const meta = '<?xml version="1.0" encoding="UTF-8"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.3"><office:meta><dc:title>GFS Studio Präsentation</dc:title><dc:language>de-DE</dc:language></office:meta></office:document-meta>';
+  const meta = `<?xml version="1.0" encoding="UTF-8"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.3"><office:meta><dc:title>GFS Studio Präsentation</dc:title><dc:language>de-DE</dc:language></office:meta></office:document-meta>`;
+  const manifest = `<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:media-type="${template ? "application/vnd.oasis.opendocument.presentation-template" : "application/vnd.oasis.opendocument.presentation"}" manifest:version="1.3"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/></manifest:manifest>`;
   const mimetype = template ? "application/vnd.oasis.opendocument.presentation-template" : "application/vnd.oasis.opendocument.presentation";
-  const mediaEntries = media.map((entry) => `<manifest:file-entry manifest:full-path="${entry.name}" manifest:media-type="${entry.mime}"/>`).join("");
-  const manifest = `<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:media-type="${mimetype}" manifest:version="1.3"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/>${mediaEntries}</manifest:manifest>`;
   return createZip([
     { name: "mimetype", contents: mimetype },
     { name: "content.xml", contents: content },
     { name: "styles.xml", contents: styles },
     { name: "meta.xml", contents: meta },
     { name: "META-INF/manifest.xml", contents: manifest },
-    ...media.map((entry) => ({ name: entry.name, contents: entry.contents })),
   ]);
 }
 
@@ -4081,58 +3815,111 @@ async function exportToPDF() {
       format: [1920, 1080],
     });
     
+    const data = getExportData();
     const slideWidth = 1920;
     const slideHeight = 1080;
     
-    // Get all slides from the stage
-    const slidesToExport = Array.from(stage.querySelectorAll("[data-slide]"));
-    
-    for (let i = 0; i < slidesToExport.length; i++) {
-      const slide = slidesToExport[i];
+    for (let i = 0; i < data.length; i++) {
+      const slideData = data[i];
       
       if (i > 0) {
         pdf.addPage([slideWidth, slideHeight], "landscape");
       }
       
-      // Clone the slide for rendering
-      const clone = slide.cloneNode(true);
-      clone.style.position = "fixed";
-      clone.style.left = "-9999px";
-      clone.style.top = "0";
-      clone.style.width = `${slideWidth}px`;
-      clone.style.height = `${slideHeight}px`;
-      clone.style.maxWidth = "none";
-      clone.style.transform = "none";
-      clone.hidden = false;
-      clone.classList.remove("is-entering");
+      // Render slide to canvas
+      const canvas = document.createElement("canvas");
+      canvas.width = slideWidth * 2; // 2x for quality
+      canvas.height = slideHeight * 2;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(2, 2);
       
-      // Ensure all child elements are visible
-      clone.querySelectorAll("[hidden]").forEach(el => el.hidden = false);
+      // Create a temporary container for rendering
+      const container = document.createElement("div");
+      container.style.width = `${slideWidth}px`;
+      container.style.height = `${slideHeight}px`;
+      container.style.position = "absolute";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      container.style.background = slideData.background || "#eeece5";
+      container.style.color = slideData.color || "#171717";
+      container.style.fontFamily = "Arial, Helvetica, sans-serif";
+      container.style.overflow = "hidden";
       
-      document.body.append(clone);
-      
-      // Wait for rendering
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Use html2canvas to capture the slide exactly as rendered
-      const canvas = await html2canvas(clone, {
-        scale: 2, // 2x for quality
-        useCORS: true,
-        logging: false,
-        backgroundColor: getComputedStyle(clone).backgroundColor || "#eeece5",
-        width: slideWidth,
-        height: slideHeight,
-        windowWidth: slideWidth,
-        windowHeight: slideHeight,
+      // Add slide content
+      slideData.elements.forEach(element => {
+        const el = document.createElement(element.type === "text" ? "div" : "div");
+        el.style.position = "absolute";
+        el.style.left = `${element.x}%`;
+        el.style.top = `${element.y}%`;
+        el.style.width = `${element.width}%`;
+        el.style.fontSize = `${element.size * 1.5}rem`;
+        el.style.color = element.color || "#171717";
+        el.style.fontFamily = element.family || "Arial, Helvetica, sans-serif";
+        el.style.textAlign = element.align || "left";
+        el.style.fontWeight = element.bold ? "800" : "400";
+        if (element.type === "text") {
+          el.textContent = element.text;
+        } else if (element.type === "shape") {
+          el.style.background = element.color || "#ef3828";
+          el.style.opacity = "0.85";
+          el.style.height = `${element.height || 18}%`;
+          if (element.shape === "circle") el.style.borderRadius = "50%";
+          if (element.shape === "line") el.style.height = "1%";
+        } else if (element.type === "image") {
+          const img = document.createElement("img");
+          img.src = element.src;
+          img.alt = element.alt || "";
+          img.style.maxHeight = "85%";
+          img.style.objectFit = "contain";
+          container.append(img);
+          return;
+        }
+        container.append(el);
       });
       
-      document.body.removeChild(clone);
+      document.body.append(container);
+      
+      // Render to canvas using html2canvas-like approach
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Draw background
+      ctx.fillStyle = slideData.background || "#eeece5";
+      ctx.fillRect(0, 0, slideWidth, slideHeight);
+      
+      // Draw elements
+      slideData.elements.forEach(element => {
+        if (element.type === "text") {
+          ctx.font = `${element.bold ? "bold " : ""}${element.size * 1.5}rem ${element.family || "Arial, Helvetica, sans-serif"}`;
+          ctx.fillStyle = element.color || "#171717";
+          ctx.textAlign = element.align || "left";
+          const x = (element.x / 100) * slideWidth;
+          const y = (element.y / 100) * slideHeight + element.size * 1.5;
+          ctx.fillText(element.text, x, y);
+        } else if (element.type === "shape") {
+          ctx.fillStyle = element.color || "#ef3828";
+          ctx.globalAlpha = 0.85;
+          const x = (element.x / 100) * slideWidth;
+          const y = (element.y / 100) * slideHeight;
+          const w = (element.width / 100) * slideWidth;
+          const h = (element.height / 100) * slideHeight;
+          if (element.shape === "circle") {
+            ctx.beginPath();
+            ctx.arc(x + w/2, y + h/2, Math.min(w, h)/2, 0, 2*Math.PI);
+            ctx.fill();
+          } else if (element.shape === "line") {
+            ctx.fillRect(x, y, w, h);
+          } else {
+            ctx.fillRect(x, y, w, h);
+          }
+          ctx.globalAlpha = 1;
+        }
+      });
       
       // Add slide to PDF
-      const imgData = canvas.toDataURL("image/png", 0.95);
+      const imgData = canvas.toDataURL("image/png", 0.9);
       pdf.addImage(imgData, "PNG", 0, 0, slideWidth, slideHeight);
       
-      if (i < slidesToExport.length - 1) {
+      if (i < data.length - 1) {
         pdf.addPage([slideWidth, slideHeight], "landscape");
       }
     }
@@ -4298,8 +4085,9 @@ function escapeHtml(text) {
 }
 
 async function exportPresentation(format) {
+
   try {
-    const data = await prepareExportImages(getExportData());
+    const data = getExportData();
     const isTemplate = format === "otp";
     const bytes = format === "pptx" ? createPptx(data) : createOdp(data, isTemplate);
     const extension = isTemplate ? "otp" : format;
@@ -4312,7 +4100,7 @@ async function exportPresentation(format) {
     fileMenu.open = false;
     exportSaveIndicator.textContent = `${extension.toUpperCase()} heruntergeladen`;
     exportSaveIndicator.dataset.state = "saved";
-    showStatus(`${extension.toUpperCase()} exportiert · Texte, Formen und Bilder bleiben erhalten.`);
+    showStatus(`${extension.toUpperCase()} exportiert · Texte und Grundformen bleiben editierbar.`);
   } catch (error) {
     console.error(`Die Präsentation konnte nicht als ${format.toUpperCase()} exportiert werden.`, error);
     exportSaveIndicator.textContent = "Export fehlgeschlagen";
